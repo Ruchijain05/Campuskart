@@ -17,6 +17,7 @@ from app.schemas.auth import (
     UserRegister,
 )
 from app.services import auth as auth_service
+from app.services.notifications import create_notification
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -53,6 +54,15 @@ def register(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")
     try:
         user = auth_service.register_user(db, user_in)
+        if user.role == UserRole.BUYER:
+            create_notification(
+                db,
+                user_id=user.id,
+                kind="account",
+                title="Welcome to CampusKart",
+                message="Your account is ready. We’ll keep you updated about important account activity and orders.",
+                link="/account",
+            )
         db.commit()
         db.refresh(user)
     except IntegrityError as exc:

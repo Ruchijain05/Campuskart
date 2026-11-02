@@ -1,14 +1,29 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { ArrowRight, GraduationCap, LogOut, Search, ShoppingBag, ShoppingCart, UserRound } from "lucide-react";
+import { ArrowRight, Bell, GraduationCap, LogOut, MessageCircle, Search, ShoppingBag, ShoppingCart, UserRound } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useCart } from "../lib/cart";
+import { CompareTray } from "../features/compare/CompareTray";
+import { useNotifications } from "../lib/notifications";
+import { api } from "../lib/api";
 
 export function SiteLayout() {
-  const { user, signOut } = useAuth();
+  const { user, token, signOut } = useAuth();
   const { itemCount } = useCart();
+  const { unreadCount } = useNotifications();
   const [search, setSearch] = useState("");
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!token || (user?.role !== "buyer" && user?.role !== "seller")) { setUnreadMessages(0); return; }
+    let active = true;
+    const refresh = () => api.getUnreadChatCount(token).then((result) => { if (active) setUnreadMessages(result.unread_count); }).catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30000);
+    window.addEventListener("campuskart-messages-updated", refresh);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("campuskart-messages-updated", refresh); };
+  }, [token, user?.id, user?.role]);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,12 +83,24 @@ export function SiteLayout() {
       </header>
       <nav className="category-nav" aria-label="Main navigation">
         <NavLink to="/" end>Discover</NavLink>
+        <NavLink to="/bundles">Bundles</NavLink>
         <NavLink to="/sell">Sell on CampusKart</NavLink>
+        {user && <NavLink to="/orders">My orders</NavLink>}
+        {(user?.role === "buyer" || user?.role === "seller") && <NavLink to="/messages" className="notification-nav-link"><MessageCircle size={14} /> Messages{unreadMessages > 0 && <b className="notification-count">{unreadMessages > 99 ? "99+" : unreadMessages}</b>}</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/buy-again">Buy again</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/wishlist">Wishlist</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/my-questions">My questions</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/returns">Returns &amp; refunds</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/support">Support</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/requests">Request anything</NavLink>}
+        {user?.role === "buyer" && <NavLink to="/notifications" className="notification-nav-link"><Bell size={14} /> Notifications{unreadCount > 0 && <b className="notification-count">{unreadCount > 99 ? "99+" : unreadCount}</b>}</NavLink>}
         {user?.role === "seller" && <NavLink to="/seller/products">Seller studio</NavLink>}
+        {user?.role === "seller" && <NavLink to="/seller/orders">Seller orders</NavLink>}
         {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         <span className="nav-note">Good finds. Great campus energy.</span>
       </nav>
       <main className="main-content"><Outlet /></main>
+      <CompareTray />
       <footer className="site-footer">
         <Link className="footer-brand" to="/">campus<span>kart</span></Link>
         <span>Campus finds, made simple.</span>

@@ -11,6 +11,7 @@ interface CartContextValue {
   addItem: (productId: number, quantity?: number) => Promise<void>;
   updateItem: (productId: number, quantity: number) => Promise<void>;
   removeItem: (productId: number) => Promise<void>;
+  clearAfterOrder: () => void;
 }
 
 const emptyCart: Cart = { items: [], total: "0.00" };
@@ -54,8 +55,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setError("");
     setCart(await api.removeCartItem(productId, requireToken()));
   }, [requireToken]);
+  const clearAfterOrder = useCallback(() => setCart(emptyCart), []);
   const itemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
-  const value = useMemo(() => ({ cart, itemCount, loading, error, addItem, updateItem, removeItem }), [cart, itemCount, loading, error, addItem, updateItem, removeItem]);
+  const value = useMemo(() => ({ cart, itemCount, loading, error, addItem, updateItem, removeItem, clearAfterOrder }), [cart, itemCount, loading, error, addItem, updateItem, removeItem, clearAfterOrder]);
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 

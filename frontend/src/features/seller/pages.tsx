@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDownToLine, ArrowRight, BadgePlus, CircleHelp, Package, Search, Store, Upload } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, BadgePlus, BarChart3, CircleHelp, IndianRupee, Package, Search, ShoppingBag, ShoppingCart, Store, Upload } from "lucide-react";
 import { Link } from "react-router-dom";
+import { formatPrice } from "../../components/ProductCard";
 import { LoadingState, Notice, PageTitle } from "../../components/SiteLayout";
 import { api, BulkProductUploadError, type BulkProductRowError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { buildCategoryTree, flattenCategoryTree } from "../../lib/categoryTree";
-import type { Category, Product } from "../../lib/types";
+import { SHOPPING_SECTIONS, type Category, type LowStockProduct, type Product, type SellerDashboard, type ShoppingSectionSlug } from "../../lib/types";
+import { ProductImageManager } from "./ProductImageManager";
+import { SellerEarnings } from "./SellerEarnings";
 
 export function SellerApplicationPage() {
   const { user, token } = useAuth();
@@ -69,8 +72,10 @@ const emptyProduct = {
   description: "",
   price: "",
   stock: "0",
+  low_stock_threshold: "5",
   image_url: "",
   category_id: "",
+  section_slugs: [] as ShoppingSectionSlug[],
 };
 
 function downloadProductTemplate() {
@@ -89,6 +94,10 @@ function downloadProductTemplate() {
 export function SellerProductsPage() {
   const { token, user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [dashboard, setDashboard] = useState<SellerDashboard | null>(null);
+  const [lowStockProducts, setLowStockProducts] = useState<LowStockProduct[]>([]);
+  const [dashboardError, setDashboardError] = useState("");
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [form, setForm] = useState(emptyProduct);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -116,6 +125,20 @@ export function SellerProductsPage() {
     });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (user?.role !== "seller" || !token) return;
+    setDashboardLoading(true);
+    Promise.all([api.getSellerDashboard(token), api.listSellerLowStock(token)]).then(([result, lowStock]) => {
+      if (active) { setDashboard(result); setLowStockProducts(lowStock); }
+    }).catch((reason: unknown) => {
+      if (active) setDashboardError(reason instanceof Error ? reason.message : "Could not load your seller dashboard.");
+    }).finally(() => {
+      if (active) setDashboardLoading(false);
+    });
+    return () => { active = false; };
+  }, [token, user?.role]);
 
   function setField(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -157,11 +180,22 @@ export function SellerProductsPage() {
         description: form.description.trim() || null,
         price: Number(form.price),
         stock: Number(form.stock),
+        low_stock_threshold: Number(form.low_stock_threshold),
         image_url: form.image_url.trim() || null,
         category_id: form.category_id ? Number(form.category_id) : null,
+        section_slugs: form.section_slugs,
       };
       const product = await api.createProduct(input, token);
+      if (user?.role === "seller") api.listSellerLowStock(token).then(setLowStockProducts).catch(() => undefined);
       setForm(emptyProduct);
+      setProductId(String(product.id));
+      setLoadedProduct(product);
+      setEditForm({
+        name: product.name, description: product.description ?? "", price: String(product.price),
+        stock: String(product.stock), low_stock_threshold: String(product.low_stock_threshold), image_url: product.image_url ?? "",
+        category_id: product.category_id ? String(product.category_id) : "",
+        section_slugs: product.sections.map((section) => section.slug),
+      });
       setSuccess(`“${product.name}” is now listed as product #${product.id}.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create product.");
@@ -188,8 +222,10 @@ export function SellerProductsPage() {
         description: product.description ?? "",
         price: String(product.price),
         stock: String(product.stock),
+        low_stock_threshold: String(product.low_stock_threshold),
         image_url: product.image_url ?? "",
         category_id: product.category_id ? String(product.category_id) : "",
+        section_slugs: product.sections.map((section) => section.slug),
       });
     } catch (reason) {
       setManageError(reason instanceof Error ? reason.message : "Could not find that product.");
@@ -209,9 +245,12 @@ export function SellerProductsPage() {
         description: editForm.description.trim() || null,
         price: Number(editForm.price),
         stock: Number(editForm.stock),
+        low_stock_threshold: Number(editForm.low_stock_threshold),
         image_url: editForm.image_url.trim() || null,
         category_id: editForm.category_id ? Number(editForm.category_id) : null,
+        section_slugs: editForm.section_slugs,
       }, token);
+      if (user?.role === "seller") api.listSellerLowStock(token).then(setLowStockProducts).catch(() => undefined);
       setLoadedProduct(updated);
       setSuccess(`“${updated.name}” updated.`);
     } catch (reason) {
@@ -238,6 +277,29 @@ export function SellerProductsPage() {
       <PageTitle eyebrow="SELLER STUDIO" title="Make your next listing." description="Add a product to the campus marketplace and keep your details up to date." />
       {error && <Notice tone="error">{error}</Notice>}
       {success && <Notice tone="success">{success}</Notice>}
+      {user?.role === "seller" && <section className="seller-overview" aria-label="Seller performance">
+        <div className="seller-overview-heading"><div><span className="eyebrow">YOUR STORE</span><h2>Seller overview</h2></div><span className="seller-overview-caption">Order and sales totals exclude cancelled orders.</span></div>
+        {dashboardError && <Notice tone="error">{dashboardError}</Notice>}
+        {dashboardLoading && !dashboard ? <LoadingState label="Loading your store activity..." /> : dashboard && <>
+          <div className="seller-stat-grid">
+            <article className="seller-stat-card"><span><Package size={17} /></span><small>Total products</small><strong>{dashboard.total_products}</strong></article>
+            <article className="seller-stat-card"><span><ShoppingCart size={17} /></span><small>Orders</small><strong>{dashboard.total_orders}</strong></article>
+            <article className="seller-stat-card"><span><ShoppingBag size={17} /></span><small>Sales (items)</small><strong>{dashboard.total_sales}</strong></article>
+            <article className="seller-stat-card"><span><IndianRupee size={17} /></span><small>Revenue</small><strong>{formatPrice(dashboard.total_revenue)}</strong></article>
+          </div>
+          <SellerEarnings />
+          <div className="seller-recent-orders"><div className="seller-recent-heading"><h3><BarChart3 size={17} /> Recent orders</h3><span>Latest 5 orders containing your products</span></div>
+            {dashboard.recent_orders.length ? <div className="seller-recent-list">{dashboard.recent_orders.map((order) => <article key={order.id} className="seller-recent-order">
+              <div className="seller-recent-order-main"><b>Order #{order.id}</b><span>{new Date(order.created_at).toLocaleString()}</span></div>
+              <p>{order.products.join(" · ")}</p>
+              <div className="seller-recent-order-footer"><span className={`seller-order-status seller-order-${order.status}`}>{order.status}</span><span>{order.item_count} item{order.item_count === 1 ? "" : "s"}</span><strong>{formatPrice(order.subtotal)}</strong></div>
+            </article>)}</div> : <div className="seller-recent-empty">No orders for your products yet.</div>}
+          </div>
+          <div className="low-stock-panel"><div className="seller-recent-heading"><h3><Package size={17} /> Low stock</h3><span>{lowStockProducts.length} product{lowStockProducts.length === 1 ? "" : "s"} at or below threshold</span></div>
+            {lowStockProducts.length ? <div className="low-stock-list">{lowStockProducts.map((product) => <article key={product.id}><b>{product.name}</b><span>{product.stock} left · alert at {product.low_stock_threshold}</span></article>)}</div> : <p className="low-stock-clear">All your products are above their low-stock thresholds.</p>}
+          </div>
+        </>}
+      </section>}
       <div className="seller-dashboard-grid">
         <form className="form-card" onSubmit={submit}>
           <div className="form-card-heading"><span className="card-icon"><BadgePlus size={19} /></span><div><h2>List a product</h2><p>Give your campus community the details.</p></div></div>
@@ -245,7 +307,9 @@ export function SellerProductsPage() {
             <label className="field-full">Product name<input required minLength={1} maxLength={150} value={form.name} onChange={(event) => setField("name", event.target.value)} placeholder="e.g. Chemistry lab coat" /></label>
             <label>Price (₹)<input type="number" min="0.01" step="0.01" required value={form.price} onChange={(event) => setField("price", event.target.value)} placeholder="0.00" /></label>
             <label>Available quantity<input type="number" min="0" step="1" required value={form.stock} onChange={(event) => setField("stock", event.target.value)} /></label>
+            <label>Low-stock alert threshold<input type="number" min="0" max="100000" step="1" required value={form.low_stock_threshold} onChange={(event) => setField("low_stock_threshold", event.target.value)} /><small>Notify you when stock is at or below this amount.</small></label>
             <label className="field-full">Category<select value={form.category_id} onChange={(event) => setField("category_id", event.target.value)}><option value="">No category</option>{categoryOptions.map(({ category, depth, path }) => <option key={category.id} value={category.id}>{`${"— ".repeat(depth)}${path}`}</option>)}</select></label>
+            <fieldset className="field-full shopping-section-fields"><legend>Shopping sections</legend>{SHOPPING_SECTIONS.map((section) => <label key={section.slug}><input type="checkbox" checked={form.section_slugs.includes(section.slug)} onChange={(event) => setForm((current) => ({ ...current, section_slugs: event.target.checked ? [...current.section_slugs, section.slug] : current.section_slugs.filter((slug) => slug !== section.slug) }))} /> {section.name}</label>)}</fieldset>
             <label className="field-full">Image URL<input type="url" value={form.image_url} onChange={(event) => setField("image_url", event.target.value)} placeholder="https://..." /></label>
             <label className="field-full">Description<textarea rows={4} value={form.description} onChange={(event) => setField("description", event.target.value)} placeholder="What should buyers know?" /></label>
           </div>
@@ -260,11 +324,14 @@ export function SellerProductsPage() {
           {manageError && <Notice tone="error">{manageError}</Notice>}
               {loadedProduct && <form className="managed-product" onSubmit={saveProduct}>
                 <b>Edit {loadedProduct.name}</b>
+                {loadedProduct.stock <= loadedProduct.low_stock_threshold && <span className="low-stock-badge">LOW STOCK · {loadedProduct.stock} left</span>}
                 <label>Product name<input required minLength={1} maxLength={150} value={editForm.name} onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))} /></label>
                 <div className="field-grid">
                   <label>Price (₹)<input type="number" min="0.01" step="0.01" required value={editForm.price} onChange={(event) => setEditForm((current) => ({ ...current, price: event.target.value }))} /></label>
                   <label>Quantity<input type="number" min="0" required value={editForm.stock} onChange={(event) => setEditForm((current) => ({ ...current, stock: event.target.value }))} /></label>
+                  <label>Low-stock threshold<input type="number" min="0" max="100000" required value={editForm.low_stock_threshold} onChange={(event) => setEditForm((current) => ({ ...current, low_stock_threshold: event.target.value }))} /></label>
                   <label className="field-full">Category<select value={editForm.category_id} onChange={(event) => setEditForm((current) => ({ ...current, category_id: event.target.value }))}><option value="">No category</option>{categoryOptions.map(({ category, depth, path }) => <option key={category.id} value={category.id}>{`${"— ".repeat(depth)}${path}`}</option>)}</select></label>
+                  <fieldset className="field-full shopping-section-fields"><legend>Shopping sections</legend>{SHOPPING_SECTIONS.map((section) => <label key={section.slug}><input type="checkbox" checked={editForm.section_slugs.includes(section.slug)} onChange={(event) => setEditForm((current) => ({ ...current, section_slugs: event.target.checked ? [...current.section_slugs, section.slug] : current.section_slugs.filter((slug) => slug !== section.slug) }))} /> {section.name}</label>)}</fieldset>
                   <label className="field-full">Image URL<input type="url" value={editForm.image_url} onChange={(event) => setEditForm((current) => ({ ...current, image_url: event.target.value }))} placeholder="https://..." /></label>
                   <label className="field-full">Description<textarea rows={3} value={editForm.description} onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))} /></label>
                 </div>
@@ -272,6 +339,11 @@ export function SellerProductsPage() {
                 <button type="button" className="button button-danger" onClick={deleteProduct}>Delete listing</button>
                 <small>Product ownership is verified by the backend.</small>
               </form>}
+          {loadedProduct && token && user?.role === "seller" && loadedProduct.seller_id === user.id && <ProductImageManager
+            product={loadedProduct}
+            token={token}
+            onPrimaryChange={(imageUrl) => setLoadedProduct((current) => current ? { ...current, image_url: imageUrl } : current)}
+          />}
           <div className="aside-note"><CircleHelp size={17} /> Your account must have seller or admin access.</div>
         </aside>
       </div>

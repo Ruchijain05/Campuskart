@@ -1,14 +1,95 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Check, FolderPlus, Pencil, ShieldCheck, X } from "lucide-react";
+import { Activity, AlertTriangle, Check, FolderPlus, IndianRupee, Package, PackageCheck, Pencil, ShoppingCart, ShieldCheck, Star, Store, UserPlus, UserRound, Users, X } from "lucide-react";
 import { LoadingState, Notice, PageTitle } from "../../components/SiteLayout";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { buildCategoryTree, flattenCategoryTree, getCategoryDescendantIds } from "../../lib/categoryTree";
-import type { Category, SellerApplication } from "../../lib/types";
+import { formatPrice } from "../../components/ProductCard";
+import type { AdminDashboard, AdminDailySummary, Category, LowStockProduct, Order, OrderStatus, SellerApplication } from "../../lib/types";
+import { ReturnsManagement } from "./ReturnsManagement";
+import { AdminSupportTickets } from "./AdminSupportTickets";
+import { CouponManagement } from "./CouponManagement";
+import { ProductOffers } from "./ProductOffers";
+import { ShippingManagement } from "./ShippingManagement";
+import { InvoiceDownloadButton } from "../../components/InvoiceDownloadButton";
+import { PayoutManagement } from "./PayoutManagement";
+import { BundleManagement } from "./BundleManagement";
+import { CampusPickupManagement } from "./CampusPickupManagement";
+import { AdminProductRequests } from "./AdminProductRequests";
+
+function AdminBarChart({ title, values, field, color, icon }: {
+  title: string;
+  values: AdminDailySummary[];
+  field: "orders" | "registrations";
+  color: string;
+  icon: "orders" | "users";
+}) {
+  const data = values.map((item) => item[field]);
+  const maxValue = Math.max(...data, 1);
+  const Icon = icon === "orders" ? ShoppingCart : UserPlus;
+  const left = 30;
+  const top = 12;
+  const chartHeight = 112;
+  const chartWidth = 470;
+  const step = chartWidth / Math.max(values.length, 1);
+  const barWidth = Math.min(30, step * 0.52);
+  return <section className="admin-chart-card">
+    <div className="admin-chart-heading"><span><Icon size={16} /></span><div><h3>{title}</h3><small>Last 7 days</small></div></div>
+    <svg className="admin-bar-chart" viewBox="0 0 530 166" role="img" aria-label={`${title} for the last seven days`}>
+      {[0, 1, 2, 3].map((line) => {
+        const y = top + (chartHeight / 3) * line;
+        return <line key={line} x1={left} x2={left + chartWidth} y1={y} y2={y} className="admin-chart-gridline" />;
+      })}
+      {values.map((item, index) => {
+        const value = item[field];
+        const height = value ? Math.max(3, (value / maxValue) * chartHeight) : 0;
+        const x = left + index * step + (step - barWidth) / 2;
+        const y = top + chartHeight - height;
+        const label = new Date(`${item.date}T00:00:00`).toLocaleDateString(undefined, { weekday: "short" });
+        return <g key={item.date}>
+          <rect x={x} y={y} width={barWidth} height={height} rx="4" fill={color} />
+          <text x={x + barWidth / 2} y={Math.max(10, y - 5)} className="admin-chart-value" textAnchor="middle">{value || ""}</text>
+          <text x={x + barWidth / 2} y="148" className="admin-chart-label" textAnchor="middle">{label}</text>
+        </g>;
+      })}
+    </svg>
+  </section>;
+}
+
+function AdminOverview({ data }: { data: AdminDashboard }) {
+  const stats = [
+    { label: "Total users", value: data.total_users, icon: Users, tone: "blue" },
+    { label: "Buyers", value: data.buyers, icon: UserRound, tone: "violet" },
+    { label: "Sellers", value: data.sellers, icon: Store, tone: "green" },
+    { label: "Products", value: data.total_products, icon: Package, tone: "amber" },
+    { label: "Orders", value: data.total_orders, icon: ShoppingCart, tone: "blue" },
+    { label: "Total revenue", value: formatPrice(data.total_revenue), icon: IndianRupee, tone: "green" },
+  ];
+  return <section className="admin-overview" aria-label="Store overview">
+    <div className="admin-overview-heading"><div><span className="eyebrow">STORE SNAPSHOT</span><h2>CampusKart at a glance</h2></div><p>Revenue shows non-cancelled order value. COD collection may still be pending.</p></div>
+    <div className="admin-stat-grid">{stats.map(({ label, value, icon: Icon, tone }) => <article className="admin-stat-card" key={label}>
+      <span className={`admin-stat-icon tone-${tone}`}><Icon size={18} /></span><small>{label}</small><strong>{value}</strong>
+    </article>)}</div>
+    <div className="admin-analytics-grid">
+      <AdminBarChart title="Orders placed" values={data.daily_summary} field="orders" color="#6375d7" icon="orders" />
+      <AdminBarChart title="New accounts" values={data.daily_summary} field="registrations" color="#55a889" icon="users" />
+    </div>
+    <section className="admin-activity-card"><div className="admin-activity-heading"><h3><Activity size={17} /> Recent activity</h3><span>Latest updates across the store</span></div>
+      {data.recent_activities.length ? <div className="admin-activity-list">{data.recent_activities.map((item) => {
+        const Icon = item.kind === "user" ? UserPlus : item.kind === "product" ? Package : item.kind === "order" ? ShoppingCart : item.kind === "review" ? Star : Store;
+        return <article className="admin-activity-item" key={item.id}><span className={`admin-activity-icon activity-${item.kind}`}><Icon size={15} /></span><div><b>{item.title}</b><p>{item.detail}</p></div><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></article>;
+      })}</div> : <p className="admin-activity-empty">No activity yet.</p>}
+    </section>
+  </section>;
+}
 
 export function AdminPage() {
   const { token } = useAuth();
+  const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [applications, setApplications] = useState<SellerApplication[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<LowStockProduct[]>([]);
+  const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryName, setCategoryName] = useState("");
   const [categoryDescription, setCategoryDescription] = useState("");
@@ -30,12 +111,18 @@ export function AdminPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const [pending, groups] = await Promise.all([
+      const [pending, groups, allOrders, overview, lowStock] = await Promise.all([
         api.listSellerApplications(token),
         api.listCategories(),
+        api.listAdminOrders(token),
+        api.getAdminDashboard(token),
+        api.listAdminLowStock(token),
       ]);
       setApplications(pending);
       setCategories(groups);
+      setOrders(allOrders);
+      setDashboard(overview);
+      setLowStockProducts(lowStock);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load admin data.");
@@ -45,6 +132,29 @@ export function AdminPage() {
   }
 
   useEffect(() => { void loadData(); }, [token]);
+
+  async function changeOrderStatus(orderId: number, nextStatus: OrderStatus) {
+    if (!token) return;
+    setError(""); setSuccess(""); setUpdatingOrderId(orderId);
+    try {
+      const updated = await api.updateOrderStatus(orderId, nextStatus, token);
+      setOrders((items) => items.map((item) => item.id === orderId ? updated : item));
+      setSuccess(`Order #${orderId} marked ${nextStatus}.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not update order status.");
+    } finally { setUpdatingOrderId(null); }
+  }
+
+  function nextStatuses(orderStatus: OrderStatus): OrderStatus[] {
+    const transitions: Record<OrderStatus, OrderStatus[]> = {
+      placed: ["confirmed", "cancelled"],
+      confirmed: ["shipped", "cancelled"],
+      shipped: ["delivered"],
+      delivered: [],
+      cancelled: [],
+    };
+    return transitions[orderStatus];
+  }
 
   async function review(id: number, decision: "approved" | "rejected") {
     if (!token) return;
@@ -125,7 +235,33 @@ export function AdminPage() {
       <PageTitle eyebrow="CAMPUSKART ADMIN" title="Keep good things moving." description="Review seller applications and keep the catalog organized." />
       {error && <Notice tone="error">{error}</Notice>}
       {success && <Notice tone="success">{success}</Notice>}
+      {loading && !dashboard ? <div className="admin-overview-loading"><LoadingState label="Loading store overview..." /></div> : dashboard && <AdminOverview data={dashboard} />}
       <div className="admin-grid">
+        <section className="admin-card admin-orders-card">
+          <div className="form-card-heading"><span className="card-icon"><PackageCheck size={19} /></span><div><h2>Orders</h2><p>Track and update order progress.</p></div><span className="count-badge">{orders.length}</span></div>
+          {loading ? <LoadingState label="Loading orders..." /> : orders.length ? <div className="admin-order-list">{orders.map((order) => {
+            const availableStatuses = nextStatuses(order.status);
+            return <article className="admin-order" key={order.id}>
+              <div className="admin-order-heading"><div><b>ORDER #{order.id}</b><small>{new Date(order.created_at).toLocaleString()}</small></div><strong>{formatPrice(order.total)}</strong></div>
+              {Number(order.discount_amount) > 0 && <small>Subtotal {formatPrice(order.subtotal)} · Coupon {order.coupon_code} · Discount −{formatPrice(order.discount_amount)}</small>}
+              <p><b>{order.delivery_name}</b> · {order.delivery_phone}<br />{order.address_line}, {order.city}, {order.state} {order.postal_code}</p>
+              <small>{order.items.map((item) => `${item.product_name} × ${item.quantity}`).join(" · ")}</small>
+              <p><b>Payment:</b> {order.payment_method === "razorpay" ? "Razorpay" : order.payment_method === "coupon" ? "No payment due" : "Cash on Delivery"} · {order.payment_status}<br />{order.razorpay_order_id && <>Razorpay order ID: <code>{order.razorpay_order_id}</code><br /></>}{order.razorpay_payment_id && <>Razorpay payment ID: <code>{order.razorpay_payment_id}</code></>}</p>
+              <InvoiceDownloadButton orderId={order.id} />
+              <label>Order status<select value={order.status} disabled={!availableStatuses.length || updatingOrderId === order.id} onChange={(event) => void changeOrderStatus(order.id, event.target.value as OrderStatus)}>
+                <option value={order.status}>{order.status}</option>
+                {availableStatuses.map((status) => <option value={status} key={status}>{status}</option>)}
+              </select></label>
+            </article>;
+          })}</div> : <div className="empty-admin"><span>✦</span><p>No orders yet.</p></div>}
+        </section>
+        <section className="admin-card admin-low-stock-card">
+          <div className="form-card-heading"><span className="card-icon"><AlertTriangle size={19} /></span><div><h2>Low-stock products</h2><p>Active products at or below their seller-set threshold.</p></div><span className="count-badge">{lowStockProducts.length}</span></div>
+          {loading ? <LoadingState label="Loading low-stock products..." /> : lowStockProducts.length ? <div className="admin-low-stock-list">{lowStockProducts.map((product) => <article key={product.id}>
+            <div><b>{product.name}</b><small>Seller: {product.seller_name ?? "Unassigned"} · Product #{product.id}</small></div>
+            <strong>{product.stock} left <span>/ threshold {product.low_stock_threshold}</span></strong>
+          </article>)}</div> : <div className="empty-admin"><span>✓</span><p>No active products are below their thresholds.</p></div>}
+        </section>
         <section className="admin-card">
           <div className="form-card-heading"><span className="card-icon"><ShieldCheck size={19} /></span><div><h2>Seller applications</h2><p>Pending requests from your community.</p></div><span className="count-badge">{applications.length}</span></div>
           {loading ? <LoadingState label="Loading applications..." /> : applications.length ? (
@@ -171,6 +307,15 @@ export function AdminPage() {
           </div>
         </section>
       </div>
+      <ProductOffers />
+      <BundleManagement />
+      <ShippingManagement />
+      <CampusPickupManagement />
+      <PayoutManagement />
+      <CouponManagement />
+      <AdminSupportTickets />
+      <AdminProductRequests />
+      <ReturnsManagement />
     </div>
   );
 }

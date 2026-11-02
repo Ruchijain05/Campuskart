@@ -1,16 +1,22 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from decimal import Decimal
+from typing import Literal
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.auth_deps import require_roles
 from app.api.deps import get_db
 from app.models.auth import User, UserRole
+from app.models.product import Product
 from app.schemas.product import (
     BulkProductImportResult,
     BulkProductRowError,
     ProductCreate,
     ProductRead,
     ProductUpdate,
+    ProductOfferUpdate,
+    ShoppingSectionSlug,
 )
 from app.services import products as product_service
 from app.services.categories import existing_category_ids
@@ -20,22 +26,81 @@ router = APIRouter(prefix="/products", tags=["products"])
 MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024
 
 
+@router.get("/admin-offers/products", response_model=list[ProductRead])
+def list_offer_products(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.ADMIN)),
+) -> list[ProductRead]:
+    return list(db.scalars(select(Product).order_by(Product.name.asc())).all())
+
+
+@router.put("/admin-offers/{product_id}", response_model=ProductRead)
+def set_product_offer(
+    product_id: int,
+    offer: ProductOfferUpdate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.ADMIN)),
+) -> ProductRead:
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    product.offer_discount_type = offer.discount_type
+    product.offer_discount_value = offer.discount_value
+    product.offer_starts_at = offer.starts_at
+    product.offer_ends_at = offer.ends_at
+    product.offer_is_active = offer.is_active
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@router.delete("/admin-offers/{product_id}", response_model=ProductRead)
+def disable_product_offer(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.ADMIN)),
+) -> ProductRead:
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    product.offer_is_active = False
+    db.commit()
+    db.refresh(product)
+    return product
+
+
 @router.get("", response_model=list[ProductRead])
 def list_products(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     category_id: int | None = Query(default=None, gt=0),
     include_descendants: bool = True,
+    section_slug: ShoppingSectionSlug | None = None,
+    search: str | None = Query(default=None, max_length=150),
+    min_price: Decimal | None = Query(default=None, ge=0),
+    max_price: Decimal | None = Query(default=None, ge=0),
+    min_rating: float | None = Query(default=None, ge=1, le=5),
+    in_stock: bool = False,
+    sort: Literal["newest", "price_asc", "price_desc", "popularity"] = "newest",
     db: Session = Depends(get_db),
 ) -> list[ProductRead]:
     if category_id is not None and product_service.get_category(db, category_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Minimum price cannot exceed maximum price")
     return product_service.list_products(
         db,
         skip=skip,
         limit=limit,
         category_id=category_id,
         include_descendants=include_descendants,
+        section_slug=section_slug,
+        search=search,
+        min_price=min_price,
+        max_price=max_price,
+        min_rating=min_rating,
+        in_stock=in_stock,
+        sort=sort,
     )
 
 

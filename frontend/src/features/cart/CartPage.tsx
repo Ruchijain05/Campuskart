@@ -63,8 +63,9 @@ export function CartPage() {
             <span className="eyebrow">ORDER SUMMARY</span>
             <div><span>Available items</span><b>{cart.items.filter((item) => item.available).reduce((sum, item) => sum + item.quantity, 0)}</b></div>
             <div className="cart-total"><span>Total</span><strong>{formatPrice(cart.total)}</strong></div>
-            <small>Prices and stock are checked by CampusKart. Checkout is not available yet.</small>
-            <Link className="button button-dark" to="/">Continue browsing <ArrowRight size={16} /></Link>
+            <small>Prices and stock are checked again before you place the order.</small>
+            {cart.items.every((item) => item.available) ? <Link className="button button-dark" to="/checkout">Continue to checkout <ArrowRight size={16} /></Link> : <button className="button button-dark" disabled>Fix unavailable items to checkout</button>}
+            <Link className="button button-outline" to="/">Continue browsing</Link>
           </aside>
         </div>
       ) : (

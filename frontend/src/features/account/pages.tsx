@@ -23,8 +23,10 @@ export function AccountPage() {
       {user.role === "buyer" && (
         <div className="account-callout"><div><span className="eyebrow">READY TO SELL?</span><h3>Turn your campus finds into someone else's.</h3><p>Apply to join the seller community. An admin will review your application.</p></div><Link className="button button-dark" to="/sell">Apply to sell <ArrowRight size={16} /></Link></div>
       )}
+      {user.role === "buyer" && <div className="account-callout"><div><span className="eyebrow">DELIVERY DETAILS</span><h3>Keep your addresses ready.</h3><p>Save multiple delivery addresses and choose one during checkout.</p></div><Link className="button button-dark" to="/addresses">Manage addresses <ArrowRight size={16} /></Link></div>}
       {user.role === "seller" && <div className="account-callout"><div><span className="eyebrow">SELLER SPACE</span><h3>Your seller journey starts here.</h3><p>Add and manage your product listings in Seller Studio.</p></div><Link className="button button-dark" to="/seller/products">Open Seller Studio <ArrowRight size={16} /></Link></div>}
       {user.role === "admin" && <div className="account-callout"><div><span className="eyebrow">ADMIN SPACE</span><h3>Keep the marketplace moving.</h3><p>Review applications and keep categories up to date.</p></div><Link className="button button-dark" to="/admin">Open admin <ArrowRight size={16} /></Link></div>}
+      <div className="account-callout"><div><span className="eyebrow">YOUR PURCHASES</span><h3>Keep track of your campus finds.</h3><p>See your order history, delivery details, and COD totals.</p></div><Link className="button button-dark" to="/orders">View my orders <ArrowRight size={16} /></Link></div>
     </div>
   );
 }

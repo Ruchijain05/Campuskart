@@ -22,13 +22,13 @@ def get_cart(db: Session, user_id: int) -> CartRead:
     for item in items:
         product = item.product
         available = product.is_active and product.stock >= item.quantity
-        line_total = (product.price * item.quantity).quantize(Decimal("0.01")) if available else Decimal("0.00")
+        line_total = (product.current_price * item.quantity).quantize(Decimal("0.01")) if available else Decimal("0.00")
         total += line_total
         lines.append(
             CartLineRead(
                 product_id=product.id,
                 product_name=product.name,
-                unit_price=product.price,
+                unit_price=product.current_price,
                 quantity=item.quantity,
                 stock=product.stock,
                 image_url=product.image_url,

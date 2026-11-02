@@ -19,6 +19,8 @@ from app.models.auth import (
     UserRole,
 )
 from app.schemas.auth import SellerApplicationCreate, UserRegister
+from app.services.notifications import create_notification
+from app.services.email_notifications import send_email
 
 
 def get_user_by_email(db: Session, email: str) -> User | None:
@@ -146,6 +148,13 @@ def review_seller_application(
         )
 
     reviewed_status = SellerApplicationStatus(decision)
+    applicant = db.get(User, application.user_id)
+    if applicant is None:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Applicant account no longer exists",
+        )
     reviewed_at = datetime.now(timezone.utc)
     result = db.execute(
         update(SellerApplication)
@@ -167,15 +176,30 @@ def review_seller_application(
             detail="Application has already been reviewed",
         )
     if reviewed_status == SellerApplicationStatus.APPROVED:
-        applicant = db.get(User, application.user_id)
-        if applicant is None:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Applicant account no longer exists",
-            )
         applicant.role = UserRole.SELLER
 
+    create_notification(
+        db,
+        user_id=application.user_id,
+        kind="account",
+        title="Seller application reviewed",
+        message=(
+            "Your seller application was approved. You can now list products."
+            if reviewed_status == SellerApplicationStatus.APPROVED
+            else "Your seller application was not approved. You can review the decision in your account."
+        ),
+        link="/account",
+    )
+
+    applicant_email = applicant.email
+    applicant_name = applicant.full_name
     db.commit()
     db.refresh(application)
+    outcome = "approved" if reviewed_status == SellerApplicationStatus.APPROVED else "rejected"
+    note = f"\nAdmin note: {review_note}" if review_note else ""
+    send_email(
+        applicant_email,
+        f"CampusKart seller application {outcome}",
+        f"Hi {applicant_name},\n\nYour seller application was {outcome}.{note}\n\nSign in to CampusKart to view your account.",
+    )
     return application
