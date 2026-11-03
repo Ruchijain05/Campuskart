@@ -78,14 +78,25 @@ export class BulkProductUploadError extends Error {
   }
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000")
   .replace(/\/+$/, "");
 const API_PREFIX = `${API_BASE_URL}/api/v1`;
+
+let refreshedTokenHandler: ((token: string) => void) | null = null;
+let refreshInFlight: Promise<string> | null = null;
 
 async function request<T>(
   path: string,
   options: RequestInit = {},
   token?: string,
+  retryAfterRefresh = true,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof URLSearchParams) && !(options.body instanceof FormData)) {
@@ -94,6 +105,10 @@ async function request<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const response = await fetch(`${API_PREFIX}${path}`, { ...options, headers });
+  if (response.status === 401 && token && retryAfterRefresh) {
+    const refreshedToken = await refreshAccessToken();
+    return request<T>(path, options, refreshedToken, false);
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null) as
       | { detail?: string | Array<{ msg?: string }> }
@@ -102,11 +117,28 @@ async function request<T>(
     const message = Array.isArray(detail)
       ? detail.map((item) => item.msg).filter(Boolean).join("; ")
       : detail;
-    throw new Error(message || `Request failed (${response.status})`);
+    throw new ApiError(message || `Request failed (${response.status})`, response.status);
   }
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function refreshAccessToken(): Promise<string> {
+  if (!refreshInFlight) {
+    refreshInFlight = request<{ access_token: string; token_type: string }>(
+      "/auth/refresh",
+      { method: "POST", credentials: "include" },
+    )
+      .then(({ access_token }) => {
+        refreshedTokenHandler?.(access_token);
+        return access_token;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
 }
 
 export const api = {
@@ -363,16 +395,29 @@ export const api = {
     phone_number: string;
   }) =>
     request<User>("/auth/register", { method: "POST", body: JSON.stringify(input) }),
+  forgotPassword: (email: string) =>
+    request<{ message: string }>("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, password: string) =>
+    request<{ message: string }>("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
+  verifyEmail: (token: string) =>
+    request<{ message: string }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),
+  resendVerification: (email: string) =>
+    request<{ message: string }>("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email }) }),
   login: async (email: string, password: string) => {
     const form = new URLSearchParams({ username: email, password });
     const result = await request<{ access_token: string; token_type: string }>(
       "/auth/token",
-      { method: "POST", body: form },
+      { method: "POST", body: form, credentials: "include" },
     );
     return result.access_token;
   },
+  refreshAccessToken,
+  setRefreshedTokenHandler: (handler: ((token: string) => void) | null) => {
+    refreshedTokenHandler = handler;
+  },
   me: (token: string) => request<User>("/auth/me", {}, token),
-  logout: (token: string) => request<void>("/auth/logout", { method: "POST" }, token),
+  logout: (token: string) =>
+    request<void>("/auth/logout", { method: "POST", credentials: "include" }, token),
   applyToSell: (message: string, token: string) =>
     request<SellerApplication>(
       "/auth/seller-applications",

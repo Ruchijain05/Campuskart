@@ -4,7 +4,7 @@ import { ProtectedRoute } from "../components/ProtectedRoute";
 import { AccountPage } from "../features/account/pages";
 import { AddressesPage } from "../features/account/AddressesPage";
 import { AdminPage } from "../features/admin/pages";
-import { LoginPage, RegisterPage } from "../features/auth/pages";
+import { ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage, VerifyEmailPage } from "../features/auth/pages";
 import { CartPage } from "../features/cart/CartPage";
 import { CheckoutPage } from "../features/cart/CheckoutPage";
 import { MyOrdersPage, OrderDetailPage } from "../features/orders/pages";
@@ -35,6 +35,9 @@ export function App() {
           <Route path="bundles/:bundleId" element={<BundleDetailPage />} />
           <Route path="login" element={<LoginPage />} />
           <Route path="register" element={<RegisterPage />} />
+          <Route path="forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="reset-password" element={<ResetPasswordPage />} />
+          <Route path="verify-email" element={<VerifyEmailPage />} />
           <Route path="sell" element={<SellerApplicationPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="account" element={<AccountPage />} />

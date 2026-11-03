@@ -44,6 +44,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .header-link svg { color: #62708a; }
 .header-link small { display: block; color: #909aae; font-size: 10px; font-weight: 500; margin-bottom: 3px; }
 .header-signout { background: transparent; border: 0; padding: 0; }
+.logout-confirmation { width: min(420px, calc(100% - 32px)); padding: 30px; border: 1px solid #e8ebf2; border-radius: 14px; color: var(--ink); background: #fff; box-shadow: 0 24px 70px #17243b30; }
+.logout-confirmation::backdrop { background: #17243b80; backdrop-filter: blur(3px); }
+.logout-confirmation-icon { width: 46px; height: 46px; display: grid; place-items: center; margin-bottom: 18px; border-radius: 13px; color: #5366cf; background: #eef0ff; }
+.logout-confirmation h2 { margin: 0; font: 800 20px Manrope, sans-serif; letter-spacing: -.03em; }
+.logout-confirmation > p { margin: 9px 0 24px; color: #6f7a8e; font-size: 13px; line-height: 1.6; }
+.logout-confirmation-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.logout-confirmation-actions .button { min-width: 100px; }
+.logout-confirm-button { color: #fff; background: #334ee8; }
+.logout-confirm-button:hover:not(:disabled) { background: #2338c4; transform: translateY(-1px); }
+.logout-confirmation-actions .button:disabled { cursor: not-allowed; opacity: .58; }
 .category-nav { height: 47px; display: flex; align-items: center; gap: 33px; padding: 0 max(calc((100vw - 1200px) / 2), 5.2%); background: #fff; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; }
 .category-nav a { height: 100%; display: flex; align-items: center; color: #637087; border-bottom: 2px solid transparent; }
 .category-nav a.active, .category-nav a:hover { color: var(--blue); border-bottom-color: var(--blue); }
@@ -367,6 +377,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .password-toggle:focus-visible { outline-offset: 0; }
 .auth-switch { margin: 21px 0 0; color: #838c9c; text-align: center; font-size: 11px; }
 .auth-switch a { color: var(--blue); font-weight: 700; }
+.auth-action-page { max-width: 560px; min-height: 0; grid-template-columns: minmax(0, 1fr); }
+.auth-action-panel { width: 100%; padding: 46px; }
+.auth-action-link { margin: -5px 0 0; text-align: right; font-size: 11px; }
+.auth-action-link a, .notice a { color: var(--blue); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .field-hint { display: block; color: #969eac; font-size: 9px; font-weight: 400; line-height: 1.5; }
 .register-layout { min-height: 700px; }.register-layout .auth-panel { padding-top: 38px; padding-bottom: 38px; }.register-art { background: #e8eed2; }.register-art .auth-art-copy span { color: #737e4b; }.register-art .auth-art-copy b { color: #738a24; }.register-art .auth-art-orbit { border-color: #cbd99d; box-shadow: 0 0 0 30px #e2eac6, 0 0 0 31px #cbd99d; }.auth-art-cap { position: absolute; top: 52px; right: 57px; display: grid; place-items: center; width: 100px; height: 100px; border-radius: 27px; color: #778a2c; background: #d8e6ab; transform: rotate(11deg); }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { ArrowRight, Bell, GraduationCap, LogOut, MessageCircle, Search, ShoppingBag, ShoppingCart, UserRound } from "lucide-react";
 import { useAuth } from "../lib/auth";
@@ -13,7 +13,17 @@ export function SiteLayout() {
   const { unreadCount } = useNotifications();
   const [search, setSearch] = useState("");
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const signOutDialogRef = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const dialog = signOutDialogRef.current;
+    if (!dialog) return;
+    if (signOutOpen && !dialog.open) dialog.showModal();
+    else if (!signOutOpen && dialog.open) dialog.close();
+  }, [signOutOpen]);
 
   useEffect(() => {
     if (!token || (user?.role !== "buyer" && user?.role !== "seller")) { setUnreadMessages(0); return; }
@@ -31,13 +41,17 @@ export function SiteLayout() {
   }
 
   async function handleSignOut() {
-    if (!window.confirm("Are you sure to logout?")) return;
+    setSigningOut(true);
     try {
       await signOut();
+      setSignOutOpen(false);
       navigate("/");
     } catch (error) {
+      setSignOutOpen(false);
       navigate("/");
       window.alert(error instanceof Error ? error.message : "Could not sign out.");
+    } finally {
+      setSigningOut(false);
     }
   }
 
@@ -71,7 +85,7 @@ export function SiteLayout() {
             <ShoppingCart size={19} /><span><small>Your items</small>Cart <b className="cart-count">{itemCount}</b></span>
           </NavLink>
           {user ? (
-            <button type="button" className="header-link header-signout" onClick={handleSignOut}>
+            <button type="button" className="header-link header-signout" onClick={() => setSignOutOpen(true)}>
               <LogOut size={18} /><span><small>Account</small>Sign out</span>
             </button>
           ) : (
@@ -81,6 +95,27 @@ export function SiteLayout() {
           )}
         </nav>
       </header>
+      <dialog
+        ref={signOutDialogRef}
+        className="logout-confirmation"
+        aria-labelledby="logout-confirmation-title"
+        aria-describedby="logout-confirmation-description"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!signingOut) setSignOutOpen(false);
+        }}
+        onClose={() => setSignOutOpen(false)}
+      >
+        <div className="logout-confirmation-icon"><LogOut size={21} /></div>
+        <h2 id="logout-confirmation-title">Sign out of CampusKart?</h2>
+        <p id="logout-confirmation-description">You can sign back in anytime to continue shopping and manage your account.</p>
+        <div className="logout-confirmation-actions">
+          <button type="button" className="button button-outline" disabled={signingOut} onClick={() => setSignOutOpen(false)}>Cancel</button>
+          <button type="button" className="button logout-confirm-button" disabled={signingOut} onClick={() => void handleSignOut()}>
+            {signingOut ? "Signing out..." : "Logout"}
+          </button>
+        </div>
+      </dialog>
       <nav className="category-nav" aria-label="Main navigation">
         <NavLink to="/" end>Discover</NavLink>
         <NavLink to="/bundles">Bundles</NavLink>

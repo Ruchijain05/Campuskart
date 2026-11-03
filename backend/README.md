@@ -35,9 +35,19 @@ Configure SMTP in the backend `.env` file. Set `SMTP_HOST`, `SMTP_PORT`, and
 requires authentication. SMTP credentials come from environment settings and
 must not be committed. Port 587 commonly uses `SMTP_USE_TLS=true` and
 `SMTP_USE_SSL=false`; port 465 commonly uses `SMTP_USE_SSL=true` and
-`SMTP_USE_TLS=false`. If the host or sender is not configured, email is skipped
-while in-app notifications continue to work. Mail delivery failures do not undo
-orders or admin decisions.
+`SMTP_USE_TLS=false`. If the host or sender is not configured, non-account email
+notifications are skipped while in-app notifications continue to work.
+Registration fails explicitly if its verification email cannot be delivered.
+Mail delivery failures do not undo orders or admin decisions.
+
+Account registration and recovery require working SMTP delivery. Set
+`FRONTEND_BASE_URL` to the public frontend origin for email links. Verification
+links expire after 60 minutes and password-reset links after 30 minutes by
+default; configure `EMAIL_VERIFICATION_TOKEN_MINUTES` and
+`PASSWORD_RESET_TOKEN_MINUTES` to change those limits. Tokens are random,
+single-use, and stored only as hashes. New accounts must verify their email
+before signing in; existing users are marked verified by migration to preserve
+current accounts.
 
 ## Database migrations
 
@@ -125,23 +135,37 @@ Interactive docs are at `http://localhost:8000/docs`; health is at
 ## Authentication
 
 Passwords use Argon2 hashing. Access JWTs expire after 15 minutes by default.
-The server stores a hash of each active token identifier, so logout revokes the
-current token immediately. Expired tokens require signing in again.
+Browser sign-in sessions last 30 days by default and can be configured with
+`REFRESH_SESSION_DAYS`. The browser stores a random refresh token in an HttpOnly,
+SameSite cookie; the server stores only its hash. Access tokens remain in memory,
+and the app obtains a fresh one from the cookie when it starts. Logging out
+revokes the entire browser session immediately.
+
+Set `REFRESH_COOKIE_SECURE=true` when serving the frontend over HTTPS. For
+frontends and APIs on different sites, configure
+`REFRESH_COOKIE_SAMESITE=none` and keep `REFRESH_COOKIE_SECURE=true`; the API
+also checks that refresh and cookie-based logout requests come from a configured
+`FRONTEND_ORIGINS` origin.
 
 Open `http://localhost:8000/docs`, click **Authorize**, enter the account email
 in the **username** field and the password, then authorize. Swagger obtains an
 access token from `/api/v1/auth/token`, retains it for its UI session, and sends
 it as an `Authorization: Bearer ...` header on protected requests. No token
-copying, cookies, or CSRF header is needed. Click **Authorize** again with
-credentials after the token expires.
+copying is needed. Swagger continues to use its bearer token directly; browser
+session restoration is handled by the CampusKart frontend.
 
 ## API
 
 ### Authentication
 
 - `POST /api/v1/auth/token` — OAuth2 form login (`username` is the account email); returns a Bearer access token
-- `POST /api/v1/auth/register` — register as a buyer (sign in separately using **Authorize**)
-- `POST /api/v1/auth/logout` — revoke the current access token
+- `POST /api/v1/auth/refresh` — exchange the browser's HttpOnly refresh cookie for an access token
+- `POST /api/v1/auth/forgot-password` — send password-reset instructions without disclosing whether an account exists
+- `POST /api/v1/auth/reset-password` — set a new password with a valid one-time reset token and revoke existing sessions
+- `POST /api/v1/auth/verify-email` — verify an email address with a one-time token
+- `POST /api/v1/auth/resend-verification` — resend a verification link without disclosing account state
+- `POST /api/v1/auth/register` — register as a buyer (verify email before signing in)
+- `POST /api/v1/auth/logout` — revoke the browser session and clear its refresh cookie
 - `GET /api/v1/auth/me` — current authenticated account
 - `POST /api/v1/auth/seller-applications` — buyer submits/re-submits an application
 - `GET /api/v1/auth/seller-applications` — admin lists pending applications
@@ -149,8 +173,6 @@ credentials after the token expires.
 
 Registration requires name, email, a password of 8–128 characters with at least one letter, one number, and one special character, and a phone
 number containing exactly 10 digits.
-Email verification is not enabled; successful registration activates the
-account immediately.
 
 ### Shopping cart
 
@@ -240,7 +262,9 @@ For production browser apps, use a standard authorization-code flow with PKCE
 rather than persisting access tokens in JavaScript storage. The password flow
 is provided for first-party Swagger use and trusted clients.
 
-Shipping-provider integration, email verification, and password reset are not included. Configured SMTP sends order confirmations and status updates, return/refund decisions and status updates, and seller application decisions.
+Shipping-provider integration is not included. Configured SMTP sends account
+verification and password-reset links, order confirmations and status updates,
+return/refund decisions and status updates, and seller application decisions.
 
 ### Seller dashboard
 

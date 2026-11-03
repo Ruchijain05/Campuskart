@@ -18,6 +18,7 @@ export interface User {
   email: string;
   phone_number: string;
   role: UserRole;
+  is_email_verified: boolean;
   created_at: string;
 }
 

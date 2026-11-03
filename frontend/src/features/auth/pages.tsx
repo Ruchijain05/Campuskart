@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { ArrowRight, GraduationCap, Mail, Phone, UserRound } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PasswordField } from "../../components/PasswordField";
 import { Notice } from "../../components/SiteLayout";
 import { useAuth } from "../../lib/auth";
@@ -35,9 +35,11 @@ export function LoginPage() {
       <section className="auth-panel">
         <span className="eyebrow">WELCOME BACK</span><h1>Good to see you.</h1><p className="auth-subtitle">Sign in and get back to finding your campus favorites.</p>
         {error && <Notice tone="error">{error}</Notice>}
+        {error.toLowerCase().includes("verify your email") && <p className="auth-action-link"><Link to={`/verify-email?email=${encodeURIComponent(email)}`}>Resend verification email</Link></p>}
         <form onSubmit={submit} className="form-stack">
           <label>Email address<span className="input-wrap"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@college.edu" /></span></label>
           <label htmlFor="login-password">Password<PasswordField id="login-password" autoComplete="current-password" value={password} onChange={setPassword} placeholder="Your password" /><small className="field-hint">Use the eye button to show or hide your password.</small></label>
+          <div className="auth-action-link"><Link to="/forgot-password">Forgot your password?</Link></div>
           <button className="button button-dark button-full" disabled={busy}>{busy ? "Signing you in..." : "Sign in"} <ArrowRight size={16} /></button>
         </form>
         <p className="auth-switch">New to CampusKart? <Link to="/register">Create an account</Link></p>
@@ -46,8 +48,149 @@ export function LoginPage() {
   );
 }
 
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await api.forgotPassword(email);
+      setSent(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not request a password reset.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <AuthActionLayout eyebrow="ACCOUNT RECOVERY" title="Reset your password" description="Enter the email address linked to your account. If it exists, we'll send you a secure reset link.">
+    {error && <Notice tone="error">{error}</Notice>}
+    {sent ? <Notice tone="success">If an account exists for that email, password reset instructions will be sent.</Notice> : (
+      <form onSubmit={(event) => void submit(event)} className="form-stack">
+        <label>Email address<span className="input-wrap"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@college.edu" /></span></label>
+        <button className="button button-dark button-full" disabled={busy}>{busy ? "Sending..." : "Send reset link"} <ArrowRight size={16} /></button>
+      </form>
+    )}
+    <p className="auth-switch"><Link to="/login">Back to sign in</Link></p>
+  </AuthActionLayout>;
+}
+
+export function ResetPasswordPage() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token") ?? "";
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState(token ? "" : "This reset link is missing its token. Request a new link to continue.");
+  const [success, setSuccess] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    if (password !== confirmation) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.resetPassword(token, password);
+      setSuccess(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not reset your password.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <AuthActionLayout eyebrow="SECURE YOUR ACCOUNT" title="Choose a new password" description="Use at least 8 characters, including a letter, a number, and a special character.">
+    {error && <Notice tone="error">{error}</Notice>}
+    {success ? <><Notice tone="success">Your password has been updated. Sign in with your new password.</Notice><Link className="button button-dark button-full" to="/login">Go to sign in</Link></> : (
+      <>
+      <form onSubmit={(event) => void submit(event)} className="form-stack">
+        <label htmlFor="reset-password">New password<PasswordField id="reset-password" autoComplete="new-password" value={password} onChange={setPassword} placeholder="At least 8 characters" minLength={8} maxLength={128} pattern="(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).+" /></label>
+        <label htmlFor="reset-password-confirmation">Confirm new password<PasswordField id="reset-password-confirmation" autoComplete="new-password" value={confirmation} onChange={setConfirmation} placeholder="Enter your new password again" minLength={8} maxLength={128} /></label>
+        <button className="button button-dark button-full" disabled={busy || !token}>{busy ? "Updating password..." : "Update password"} <ArrowRight size={16} /></button>
+      </form>
+      {error && <p className="auth-switch"><Link to="/forgot-password">Request a new reset link</Link></p>}
+      </>
+    )}
+  </AuthActionLayout>;
+}
+
+export function VerifyEmailPage() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token");
+  const initialEmail = searchParams.get("email") ?? "";
+  const [email, setEmail] = useState(initialEmail);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function verify() {
+    if (!token) return;
+    setError("");
+    setBusy(true);
+    try {
+      const result = await api.verifyEmail(token);
+      setMessage(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not verify your email.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resend(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setBusy(true);
+    try {
+      const result = await api.resendVerification(email);
+      setMessage(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not request a verification email.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <AuthActionLayout eyebrow="EMAIL VERIFICATION" title={token ? "Verify your email" : "Check your inbox"} description={token ? "Confirm your email address to activate your account." : "Use the form below if you need another verification link."}>
+    {error && <Notice tone="error">{error}</Notice>}
+    {message && <Notice tone="success">{message}</Notice>}
+    {token && !message.includes("verified successfully") && <button type="button" className="button button-dark button-full" disabled={busy} onClick={() => void verify()}>{busy ? "Verifying..." : "Verify email"} <ArrowRight size={16} /></button>}
+    <form onSubmit={(event) => void resend(event)} className="form-stack">
+      <label>Email address<span className="input-wrap"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@college.edu" /></span></label>
+      <button className="button button-dark button-full" disabled={busy}>{busy ? "Sending..." : "Resend verification link"} <ArrowRight size={16} /></button>
+    </form>
+    {message.includes("verified successfully") && <Link className="button button-dark button-full" to="/login">Continue to sign in</Link>}
+    <p className="auth-switch"><Link to="/login">Back to sign in</Link></p>
+  </AuthActionLayout>;
+}
+
+function AuthActionLayout({
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return <div className="auth-page auth-action-page"><section className="auth-panel auth-action-panel">
+    <span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-subtitle">{description}</p>
+    {children}
+  </section></div>;
+}
+
 export function RegisterPage() {
-  const navigate = useNavigate();
   const [form, setForm] = useState({ full_name: "", email: "", phone_number: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,7 +207,6 @@ export function RegisterPage() {
     try {
       await api.register(form);
       setCreated(true);
-      window.setTimeout(() => navigate("/login", { replace: true }), 1400);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create your account.");
     } finally {
@@ -77,16 +219,16 @@ export function RegisterPage() {
       <div className="auth-art register-art"><span className="auth-art-cap"><GraduationCap size={46} /></span><div className="auth-art-copy"><span>GOOD THINGS<br />HAPPEN ON</span><b>campus.</b><p>Join your student marketplace.</p></div><div className="auth-art-orbit" /></div>
       <section className="auth-panel">
         <span className="eyebrow">JOIN THE CAMPUS CROWD</span><h1>Your next find<br />starts here.</h1><p className="auth-subtitle">Create an account to make CampusKart yours.</p>
-        {created && <Notice tone="success">Account created! Taking you to sign in...</Notice>}
+        {created && <Notice tone="success">Account created. Check your inbox for a verification link before signing in. <Link to={`/verify-email?email=${encodeURIComponent(form.email)}`}>Resend verification email</Link></Notice>}
         {error && <Notice tone="error">{error}</Notice>}
-        <form onSubmit={submit} className="form-stack">
+        {!created && <form onSubmit={submit} className="form-stack">
           <label>Full name<span className="input-wrap"><UserRound size={17} /><input autoComplete="name" required maxLength={120} value={form.full_name} onChange={(event) => change("full_name", event.target.value)} placeholder="Your name" /></span></label>
           <label>Email address<span className="input-wrap"><Mail size={17} /><input type="email" autoComplete="email" required value={form.email} onChange={(event) => change("email", event.target.value)} placeholder="you@college.edu" /></span></label>
           <label htmlFor="register-phone">Phone number<span className="input-wrap"><Phone size={17} /><input id="register-phone" type="tel" inputMode="numeric" autoComplete="tel-national" required minLength={10} maxLength={10} pattern="[0-9]{10}" value={form.phone_number} onChange={(event) => change("phone_number", event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="9876543210" /></span><small className="field-hint">Enter exactly 10 digits.</small></label>
           <label htmlFor="register-password">Password<PasswordField id="register-password" autoComplete="new-password" value={form.password} onChange={(value) => change("password", value)} placeholder="At least 8 characters" minLength={8} maxLength={128} pattern="(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).+" /><small className="field-hint">Use the eye button to show or hide your password. Choose 8–128 characters, including a letter, a number, and a special character.</small></label>
           <button className="button button-dark button-full" disabled={busy || created}>{busy ? "Creating account..." : "Create account"} <ArrowRight size={16} /></button>
-        </form>
-        <p className="auth-switch">Already have an account? <Link to="/login">Sign in</Link></p>
+        </form>}
+        <p className="auth-switch">{created ? <>Verified already? <Link to="/login">Sign in</Link></> : <>Already have an account? <Link to="/login">Sign in</Link></>}</p>
       </section>
     </div>
   );

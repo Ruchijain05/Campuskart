@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.config import settings
-from app.core.security import decode_token, hash_token_id
+from app.core.security import decode_token
 from app.models.auth import AuthSession, User, UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -25,7 +25,6 @@ def get_current_user(
         payload = decode_token(token, token_type="access")
         user_id = int(str(payload["sub"]))
         family_id = str(payload["family"])
-        token_id = str(payload["jti"])
     except (jwt.InvalidTokenError, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -41,7 +40,6 @@ def get_current_user(
         select(AuthSession.id).where(
             AuthSession.user_id == user_id,
             AuthSession.family_id == family_id,
-            AuthSession.token_hash == hash_token_id(token_id),
             AuthSession.revoked_at.is_(None),
             AuthSession.expires_at > datetime.now(timezone.utc),
         )

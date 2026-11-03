@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,8 +10,14 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = "mysql+pymysql://root:change-me@localhost:3306/campuskart"
     frontend_origins: list[str] = ["http://localhost:5173"]
+    frontend_base_url: str = "http://localhost:5173"
     jwt_secret_key: SecretStr
     access_token_minutes: int = 15
+    refresh_session_days: int = 30
+    refresh_cookie_secure: bool = True
+    refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    email_verification_token_minutes: int = 60
+    password_reset_token_minutes: int = 30
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -39,6 +46,14 @@ class Settings(BaseSettings):
             raise ValueError("JWT_SECRET_KEY must be a generated secret of at least 32 characters")
         if self.access_token_minutes < 1:
             raise ValueError("ACCESS_TOKEN_MINUTES must be at least 1")
+        if self.refresh_session_days < 1:
+            raise ValueError("REFRESH_SESSION_DAYS must be at least 1")
+        if self.refresh_cookie_samesite == "none" and not self.refresh_cookie_secure:
+            raise ValueError("REFRESH_COOKIE_SECURE must be true when REFRESH_COOKIE_SAMESITE is none")
+        if self.email_verification_token_minutes < 1:
+            raise ValueError("EMAIL_VERIFICATION_TOKEN_MINUTES must be at least 1")
+        if self.password_reset_token_minutes < 1:
+            raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be at least 1")
         if self.smtp_port < 1 or self.smtp_port > 65535:
             raise ValueError("SMTP_PORT must be between 1 and 65535")
         if self.smtp_timeout_seconds < 1:
