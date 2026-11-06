@@ -1,10 +1,16 @@
 # CampusKart backend
 
-FastAPI API using SQLAlchemy 2.x, MySQL/PyMySQL, Alembic, and OAuth2 Bearer JWT
-authentication. The product and category read endpoints remain public; write
-operations are protected by roles.
+FastAPI API using SQLAlchemy 2.x, PostgreSQL, Alembic, and Supabase Auth. Product
+and category reads remain public; protected API operations use CampusKart roles
+stored in PostgreSQL.
 
 ## Setup
+
+Create a Supabase project. In its database settings, copy the PostgreSQL
+connection string. Use the direct connection or a **session** pooler URL (not a
+transaction pooler for Alembic), set the SQLAlchemy driver to `psycopg`, and
+require SSL. URL-encode special characters in the database password. Keep this
+URL private in `backend/.env`.
 
 From the `backend` directory:
 
@@ -12,167 +18,135 @@ From the `backend` directory:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-If `.env` does not exist, create it from `.env.example`. If it already exists,
-keep its database settings and merge in missing auth and SMTP settings instead of
-overwriting it.
+If `.env` already exists, merge the PostgreSQL/Supabase variables into it;
+retain unrelated SMTP, Razorpay, and media settings. Set at least:
 
-Set `DATABASE_URL` to the CampusKart MySQL database and set `JWT_SECRET_KEY` to
-a randomly generated value of at least 32 characters. Generate a key with:
+- `DATABASE_URL` - Supabase PostgreSQL connection URL
+- `SUPABASE_URL` - `https://<project-ref>.supabase.co`
+- `SUPABASE_SECRET_KEY` - backend-only key used by the admin bootstrap
+- `FRONTEND_ORIGINS` - JSON list of the allowed frontend origins
 
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
+Never commit `.env`, expose `SUPABASE_SECRET_KEY` to the browser, or put
+the database URL in a `VITE_` variable.
 
-Paste the generated value into `.env`; do not commit `.env`. The signing key is
-required and the example's empty value is intentionally unusable.
+### Supabase Auth setup
 
-### Email notifications
+1. In Supabase **Authentication > URL Configuration**, set the Site URL to the
+   frontend origin (locally `http://localhost:5173`). Add redirect URLs for
+   `http://localhost:5173/login`, `http://localhost:5173/account`, and
+   `http://localhost:5173/reset-password`, plus the equivalent production URLs.
+2. In **Authentication > Providers**, enable Email and Google. Keep email
+   confirmation enabled. Configure a custom SMTP provider in Supabase Auth for
+   production confirmation and password-reset email delivery.
+3. For Google, create a Google OAuth client. Add the Supabase callback URL shown
+   in the Google provider settings as an authorized redirect URI, then enter
+   the Google client ID and secret in Supabase Auth. The application redirect
+   URLs from step 1 remain the allowed post-login destinations.
+4. In Supabase **Project Settings > Auth > JWT Signing Keys**, use an asymmetric
+   `ES256` signing key. The API verifies tokens using the public JWKS endpoint;
+   it does not need the JWT signing secret. Set `SUPABASE_JWT_AUDIENCE` to
+   `authenticated` (the default).
+5. In Supabase **Project Settings > API Keys**, copy the project URL and
+   publishable key into `frontend/.env.local` as `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_PUBLISHABLE_KEY`. Put the secret key in the backend `.env` as
+   `SUPABASE_SECRET_KEY` for the one-time admin bootstrap. The legacy
+   `SUPABASE_SERVICE_ROLE_KEY` setting remains accepted for existing setups.
+   Never use a secret/service-role key in the frontend.
 
-Configure SMTP in the backend `.env` file. Set `SMTP_HOST`, `SMTP_PORT`, and
-`SMTP_FROM_EMAIL`; also set `SMTP_USERNAME` and `SMTP_PASSWORD` when the relay
-requires authentication. SMTP credentials come from environment settings and
-must not be committed. Port 587 commonly uses `SMTP_USE_TLS=true` and
-`SMTP_USE_SSL=false`; port 465 commonly uses `SMTP_USE_SSL=true` and
-`SMTP_USE_TLS=false`. If the host or sender is not configured, non-account email
-notifications are skipped while in-app notifications continue to work.
-Registration fails explicitly if its verification email cannot be delivered.
-Mail delivery failures do not undo orders or admin decisions.
+The migrations enable Row Level Security on application tables without adding
+browser policies. The browser uses Supabase for Auth only; application data is
+accessed through the FastAPI service, which connects using the private database
+URL.
 
-Account registration and recovery require working SMTP delivery. Set
-`FRONTEND_BASE_URL` to the public frontend origin for email links. Verification
-links expire after 60 minutes and password-reset links after 30 minutes by
-default; configure `EMAIL_VERIFICATION_TOKEN_MINUTES` and
-`PASSWORD_RESET_TOKEN_MINUTES` to change those limits. Tokens are random,
-single-use, and stored only as hashes. New accounts must verify their email
-before signing in; existing users are marked verified by migration to preserve
-current accounts.
+### Schema and catalog migration
 
-## Database migrations
-
-Back up the database before applying schema changes. Automatic
-`create_all()` has been replaced by Alembic migrations so existing products
-receive the new nullable seller ownership column safely.
-
-For a **new empty database**:
+The Supabase `public` schema should not already contain CampusKart tables.
+Leave Supabase-managed schemas such as `auth` and `storage` untouched. From
+`backend`, run the complete schema migration chain:
 
 ```powershell
 alembic upgrade head
 ```
 
-For an **existing database** created by the earlier CampusKart backend, verify
-that its `categories` and `products` tables match the original catalog schema,
-then mark that schema as the Alembic baseline and apply the auth migration:
+This creates the PostgreSQL schema, adds the Supabase Auth UUID link while
+keeping CampusKart's integer user IDs, removes the old password/session tables,
+and enables RLS. Do not stamp a fresh project or run these migrations against
+the old MySQL database.
+
+By default, no old accounts or user-linked data are migrated. To optionally
+bring over **categories and products only**, set `MYSQL_SOURCE_URL` temporarily
+to the old MySQL connection in backend `.env`, keep `DATABASE_URL` pointed at
+Supabase PostgreSQL, then run:
 
 ```powershell
-alembic stamp 0001_catalog
-alembic upgrade head
+python -m scripts.migrate_catalog
 ```
 
-The existing products retain their data and have `seller_id=NULL`; only admins
-can modify those legacy products. Do not stamp a database that does not already
-have the catalog baseline tables.
+The script refuses non-empty target catalog tables, copies IDs and category
+relationships, preserves each product's `image_url`, clears seller ownership,
+and resets PostgreSQL ID sequences. It does not copy users, orders, galleries,
+section assignments, uploaded files, or other user-linked data. Back up both
+source and target before running it.
 
-Product image galleries use the additive `0013_product_images` migration. It
-creates a gallery table and copies each existing `products.image_url` into it
-as the primary image, while leaving the original product column intact. Apply
-it with `alembic upgrade head` before using seller image management. Uploaded
-files are stored under `MEDIA_ROOT` (default: `backend/uploads`) and served
-from `/media/`; keep that directory persistent and backed up with the database.
-Existing external image URLs do not need to be copied to disk.
+### Admin bootstrap
 
-Saved buyer delivery addresses use the additive `0014_delivery_addresses`
-migration. It creates an account-owned address table and does not alter or
-remove existing orders or account data. Apply with `alembic upgrade head`.
-
-Seller-configurable low-stock thresholds and alert de-duplication use the
-additive `0015_low_stock_alerts` migration. Existing products receive a
-threshold of 5; existing seller products already at/below that threshold get a
-single in-app alert and are marked alerted. Apply with `alembic upgrade head`
-before editing thresholds or using seller/admin low-stock views.
-
-Buyer support requests and admin replies use the additive
-`0016_support_tickets` migration. It creates ticket and reply tables without
-changing existing accounts, orders, or notifications. Apply with
-`alembic upgrade head` before opening the support pages.
-
-Student product requests use the additive `0028_product_requests` migration.
-It creates a separate request table and leaves existing catalog, account, and
-order data unchanged. Buyers can submit a request with an optional JPEG, PNG,
-or WebP photo (up to 5 MB); admins can respond with availability, price, and
-estimated delivery time. Responses create in-app notifications for the buyer.
-Apply with `alembic upgrade head` before using the request pages. Request
-photos are stored under `MEDIA_ROOT/product-requests/` and are served from
-`/media/`; back up this directory along with other uploaded media.
-
-Product image galleries use the additive `0013_product_images` migration. It
-creates a gallery table and copies each existing `products.image_url` into it
-as the primary image, while leaving the original product column intact. Apply
-it with `alembic upgrade head` before using seller image management. Uploaded
-files are stored under `MEDIA_ROOT` (default: `backend/uploads`) and served
-from `/media/`; keep that directory persistent and backed up with the database.
-Existing external image URLs do not need to be copied to disk.
-
-Create the first admin interactively after migrating:
+Create a new admin after the schema is migrated (and after optional catalog
+migration):
 
 ```powershell
 python -m scripts.create_admin
 ```
 
-The script reads the password without echoing it and refuses to bootstrap if an
-admin already exists. Public registration always creates a buyer.
+The script prompts for the new admin email and password without echoing the
+password. It creates a confirmed Supabase Auth user and a corresponding
+CampusKart `admin` profile. The password is managed by Supabase; only the
+backend service-role key can run this bootstrap, and a second admin is refused
+once one exists. Existing MySQL user accounts and their Argon2 hashes are not
+imported.
 
-Start the API:
+### Run the services
 
 ```powershell
 uvicorn app.main:app --reload
 ```
 
-Interactive docs are at `http://localhost:8000/docs`; health is at
+Interactive API docs are at `http://localhost:8000/docs`; health is at
 `http://localhost:8000/health`.
+
+### Email notifications
+
+Configure SMTP in the backend `.env` for order, seller-application, and other
+business notifications. Supabase Auth uses its own SMTP configuration for
+confirmation and password-reset emails. Port 587 commonly uses
+`SMTP_USE_TLS=true` and `SMTP_USE_SSL=false`; port 465 commonly uses
+`SMTP_USE_SSL=true` and `SMTP_USE_TLS=false`. Keep SMTP credentials private.
 
 ## Authentication
 
-Passwords use Argon2 hashing. Access JWTs expire after 15 minutes by default.
-Browser sign-in sessions last 30 days by default and can be configured with
-`REFRESH_SESSION_DAYS`. The browser stores a random refresh token in an HttpOnly,
-SameSite cookie; the server stores only its hash. Access tokens remain in memory,
-and the app obtains a fresh one from the cookie when it starts. Logging out
-revokes the entire browser session immediately.
-
-Set `REFRESH_COOKIE_SECURE=true` when serving the frontend over HTTPS. For
-frontends and APIs on different sites, configure
-`REFRESH_COOKIE_SAMESITE=none` and keep `REFRESH_COOKIE_SECURE=true`; the API
-also checks that refresh and cookie-based logout requests come from a configured
-`FRONTEND_ORIGINS` origin.
-
-Open `http://localhost:8000/docs`, click **Authorize**, enter the account email
-in the **username** field and the password, then authorize. Swagger obtains an
-access token from `/api/v1/auth/token`, retains it for its UI session, and sends
-it as an `Authorization: Bearer ...` header on protected requests. No token
-copying is needed. Swagger continues to use its bearer token directly; browser
-session restoration is handled by the CampusKart frontend.
+Supabase Auth owns passwords, email confirmation, recovery, OAuth, and browser
+sessions. The frontend stores and refreshes the Supabase session using the
+Supabase JavaScript client with PKCE. The FastAPI API validates the bearer JWT
+against the project's JWKS endpoint, then loads the linked CampusKart profile
+and role from PostgreSQL. App roles are never accepted from browser metadata.
 
 ## API
 
 ### Authentication
 
-- `POST /api/v1/auth/token` — OAuth2 form login (`username` is the account email); returns a Bearer access token
-- `POST /api/v1/auth/refresh` — exchange the browser's HttpOnly refresh cookie for an access token
-- `POST /api/v1/auth/forgot-password` — send password-reset instructions without disclosing whether an account exists
-- `POST /api/v1/auth/reset-password` — set a new password with a valid one-time reset token and revoke existing sessions
-- `POST /api/v1/auth/verify-email` — verify an email address with a one-time token
-- `POST /api/v1/auth/resend-verification` — resend a verification link without disclosing account state
-- `POST /api/v1/auth/register` — register as a buyer (verify email before signing in)
-- `POST /api/v1/auth/logout` — revoke the browser session and clear its refresh cookie
-- `GET /api/v1/auth/me` — current authenticated account
-- `POST /api/v1/auth/seller-applications` — buyer submits/re-submits an application
-- `GET /api/v1/auth/seller-applications` — admin lists pending applications
-- `PATCH /api/v1/auth/seller-applications/{application_id}` — admin approves or rejects
+Supabase Auth handles registration, email confirmation, password recovery, Google sign-in, and session refresh. The API verifies Supabase access tokens and resolves the CampusKart role from `users`; new authenticated users are provisioned as buyers. Only the admin bootstrap command can initially create an admin.
 
-Registration requires name, email, a password of 8–128 characters with at least one letter, one number, and one special character, and a phone
-number containing exactly 10 digits.
+- Supabase client: email/password and Google OAuth; sessions use PKCE
+- `GET /api/v1/auth/me` - current CampusKart profile and role
+- `POST /api/v1/auth/seller-applications` - buyer submits/re-submits an application
+- `GET /api/v1/auth/seller-applications` - admin lists pending applications
+- `PATCH /api/v1/auth/seller-applications/{application_id}` - admin approves or rejects
+
+Protected API calls use `Authorization: Bearer <supabase_access_token>`. The
+frontend uses only the Supabase publishable/anon key; the secret/service-role key and
+database URL belong only in the backend environment.
 
 ### Shopping cart
 
@@ -245,26 +219,14 @@ unassigned after the additive `0027_product_sections` migration.
 
 ## Frontend request example
 
-```javascript
-const response = await fetch("http://localhost:8000/api/v1/auth/token", {
-  method: "POST",
-  headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ username: email, password }),
-});
-const { access_token } = await response.json();
+```typescript
+const { data: { session } } = await supabase.auth.getSession();
+if (!session) throw new Error("Please sign in.");
 
-const profile = await fetch("http://localhost:8000/api/v1/auth/me", {
-  headers: { Authorization: `Bearer ${access_token}` },
+const response = await fetch("http://localhost:8000/api/v1/auth/me", {
+  headers: { Authorization: `Bearer ${session.access_token}` },
 });
 ```
-
-For production browser apps, use a standard authorization-code flow with PKCE
-rather than persisting access tokens in JavaScript storage. The password flow
-is provided for first-party Swagger use and trusted clients.
-
-Shipping-provider integration is not included. Configured SMTP sends account
-verification and password-reset links, order confirmations and status updates,
-return/refund decisions and status updates, and seller application decisions.
 
 ### Seller dashboard
 

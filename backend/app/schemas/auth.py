@@ -45,35 +45,6 @@ class UserRegister(BaseModel):
         return str(value).strip().casefold()
 
 
-class OAuth2Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class EmailAddressInput(BaseModel):
-    email: EmailStr
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).strip().casefold()
-
-
-class EmailTokenInput(BaseModel):
-    token: str = Field(min_length=32, max_length=256)
-
-
-class PasswordResetInput(EmailTokenInput):
-    password: str = Field(min_length=8, max_length=128)
-
-    @field_validator("password")
-    @classmethod
-    def validate_password_complexity(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"[0-9]", value) or not re.search(r"[^A-Za-z0-9\s]", value):
-            raise ValueError("Password must include at least one letter, one number, and one special character")
-        return value
-
-
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

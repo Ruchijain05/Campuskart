@@ -1,19 +1,36 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowRight, GraduationCap, Mail, Phone, UserRound } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PasswordField } from "../../components/PasswordField";
 import { Notice } from "../../components/SiteLayout";
 import { useAuth } from "../../lib/auth";
-import { api } from "../../lib/api";
 
 export function LoginPage() {
-  const { signIn } = useAuth();
+  const { user, isLoading, restoreError, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && user) {
+      navigate((location.state as { from?: string } | null)?.from ?? "/account", { replace: true });
+    }
+  }, [isLoading, location.state, navigate, user]);
+
+  async function continueWithGoogle() {
+    setError("");
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not start Google sign-in.");
+      setGoogleBusy(false);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,7 +52,12 @@ export function LoginPage() {
       <section className="auth-panel">
         <span className="eyebrow">WELCOME BACK</span><h1>Good to see you.</h1><p className="auth-subtitle">Sign in and get back to finding your campus favorites.</p>
         {error && <Notice tone="error">{error}</Notice>}
-        {error.toLowerCase().includes("verify your email") && <p className="auth-action-link"><Link to={`/verify-email?email=${encodeURIComponent(email)}`}>Resend verification email</Link></p>}
+        {!error && restoreError && <Notice tone="error">{restoreError}</Notice>}
+        {(error.toLowerCase().includes("verify your email") || error.toLowerCase().includes("email not confirmed")) && <p className="auth-action-link"><Link to={`/verify-email?email=${encodeURIComponent(email)}`}>Resend verification email</Link></p>}
+        <button type="button" className="button button-outline button-full" disabled={busy || googleBusy} onClick={() => void continueWithGoogle()}>
+          {googleBusy ? "Connecting to Google..." : "Continue with Google"}
+        </button>
+        <p className="auth-switch">or sign in with email</p>
         <form onSubmit={submit} className="form-stack">
           <label>Email address<span className="input-wrap"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@college.edu" /></span></label>
           <label htmlFor="login-password">Password<PasswordField id="login-password" autoComplete="current-password" value={password} onChange={setPassword} placeholder="Your password" /><small className="field-hint">Use the eye button to show or hide your password.</small></label>
@@ -49,6 +71,7 @@ export function LoginPage() {
 }
 
 export function ForgotPasswordPage() {
+  const { requestPasswordReset } = useAuth();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
@@ -59,7 +82,7 @@ export function ForgotPasswordPage() {
     setError("");
     setBusy(true);
     try {
-      await api.forgotPassword(email);
+      await requestPasswordReset(email);
       setSent(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not request a password reset.");
@@ -81,11 +104,10 @@ export function ForgotPasswordPage() {
 }
 
 export function ResetPasswordPage() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get("token") ?? "";
+  const { token, isLoading, updatePassword } = useAuth();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [error, setError] = useState(token ? "" : "This reset link is missing its token. Request a new link to continue.");
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -98,7 +120,11 @@ export function ResetPasswordPage() {
     }
     setBusy(true);
     try {
-      await api.resetPassword(token, password);
+      if (!token) {
+        setError("This reset link is invalid or expired. Request a new password reset link.");
+        return;
+      }
+      await updatePassword(password);
       setSuccess(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not reset your password.");
@@ -109,12 +135,13 @@ export function ResetPasswordPage() {
 
   return <AuthActionLayout eyebrow="SECURE YOUR ACCOUNT" title="Choose a new password" description="Use at least 8 characters, including a letter, a number, and a special character.">
     {error && <Notice tone="error">{error}</Notice>}
+    {!isLoading && !token && !error && <Notice tone="error">This reset link is invalid or expired. Request a new link to continue.</Notice>}
     {success ? <><Notice tone="success">Your password has been updated. Sign in with your new password.</Notice><Link className="button button-dark button-full" to="/login">Go to sign in</Link></> : (
       <>
       <form onSubmit={(event) => void submit(event)} className="form-stack">
         <label htmlFor="reset-password">New password<PasswordField id="reset-password" autoComplete="new-password" value={password} onChange={setPassword} placeholder="At least 8 characters" minLength={8} maxLength={128} pattern="(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).+" /></label>
         <label htmlFor="reset-password-confirmation">Confirm new password<PasswordField id="reset-password-confirmation" autoComplete="new-password" value={confirmation} onChange={setConfirmation} placeholder="Enter your new password again" minLength={8} maxLength={128} /></label>
-        <button className="button button-dark button-full" disabled={busy || !token}>{busy ? "Updating password..." : "Update password"} <ArrowRight size={16} /></button>
+        <button className="button button-dark button-full" disabled={busy || isLoading || !token}>{busy ? "Updating password..." : "Update password"} <ArrowRight size={16} /></button>
       </form>
       {error && <p className="auth-switch"><Link to="/forgot-password">Request a new reset link</Link></p>}
       </>
@@ -124,26 +151,12 @@ export function ResetPasswordPage() {
 
 export function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
   const initialEmail = searchParams.get("email") ?? "";
+  const { resendVerification } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
-  async function verify() {
-    if (!token) return;
-    setError("");
-    setBusy(true);
-    try {
-      const result = await api.verifyEmail(token);
-      setMessage(result.message);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not verify your email.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function resend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -151,8 +164,8 @@ export function VerifyEmailPage() {
     setMessage("");
     setBusy(true);
     try {
-      const result = await api.resendVerification(email);
-      setMessage(result.message);
+      await resendVerification(email);
+      setMessage("If an account needs verification, Supabase will send a new confirmation link.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not request a verification email.");
     } finally {
@@ -160,15 +173,13 @@ export function VerifyEmailPage() {
     }
   }
 
-  return <AuthActionLayout eyebrow="EMAIL VERIFICATION" title={token ? "Verify your email" : "Check your inbox"} description={token ? "Confirm your email address to activate your account." : "Use the form below if you need another verification link."}>
+  return <AuthActionLayout eyebrow="EMAIL VERIFICATION" title="Check your inbox" description="Open the confirmation link Supabase sent to your email. Use the form below if you need another link.">
     {error && <Notice tone="error">{error}</Notice>}
     {message && <Notice tone="success">{message}</Notice>}
-    {token && !message.includes("verified successfully") && <button type="button" className="button button-dark button-full" disabled={busy} onClick={() => void verify()}>{busy ? "Verifying..." : "Verify email"} <ArrowRight size={16} /></button>}
     <form onSubmit={(event) => void resend(event)} className="form-stack">
       <label>Email address<span className="input-wrap"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@college.edu" /></span></label>
       <button className="button button-dark button-full" disabled={busy}>{busy ? "Sending..." : "Resend verification link"} <ArrowRight size={16} /></button>
     </form>
-    {message.includes("verified successfully") && <Link className="button button-dark button-full" to="/login">Continue to sign in</Link>}
     <p className="auth-switch"><Link to="/login">Back to sign in</Link></p>
   </AuthActionLayout>;
 }
@@ -191,6 +202,8 @@ function AuthActionLayout({
 }
 
 export function RegisterPage() {
+  const { signUp } = useAuth();
+  const navigate = useNavigate();
   const [form, setForm] = useState({ full_name: "", email: "", phone_number: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -205,7 +218,11 @@ export function RegisterPage() {
     setError("");
     setBusy(true);
     try {
-      await api.register(form);
+      const needsConfirmation = await signUp(form);
+      if (!needsConfirmation) {
+        navigate("/account", { replace: true });
+        return;
+      }
       setCreated(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create your account.");

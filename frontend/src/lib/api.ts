@@ -59,6 +59,7 @@ import type {
   Conversation,
   ConversationDetail,
 } from "./types";
+import { supabase } from "./supabase";
 
 export interface BulkProductRowError {
   row: number;
@@ -89,7 +90,6 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:800
   .replace(/\/+$/, "");
 const API_PREFIX = `${API_BASE_URL}/api/v1`;
 
-let refreshedTokenHandler: ((token: string) => void) | null = null;
 let refreshInFlight: Promise<string> | null = null;
 
 async function request<T>(
@@ -126,13 +126,11 @@ async function request<T>(
 
 function refreshAccessToken(): Promise<string> {
   if (!refreshInFlight) {
-    refreshInFlight = request<{ access_token: string; token_type: string }>(
-      "/auth/refresh",
-      { method: "POST", credentials: "include" },
-    )
-      .then(({ access_token }) => {
-        refreshedTokenHandler?.(access_token);
-        return access_token;
+    refreshInFlight = supabase.auth.refreshSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (!data.session) throw new ApiError("Your sign-in session has expired.", 401);
+        return data.session.access_token;
       })
       .finally(() => {
         refreshInFlight = null;
@@ -388,36 +386,7 @@ export const api = {
     request<Category>(`/categories/${id}`, { method: "PATCH", body: JSON.stringify(input) }, token),
   deleteCategory: (id: number, token: string) =>
     request<void>(`/categories/${id}`, { method: "DELETE" }, token),
-  register: (input: {
-    full_name: string;
-    email: string;
-    password: string;
-    phone_number: string;
-  }) =>
-    request<User>("/auth/register", { method: "POST", body: JSON.stringify(input) }),
-  forgotPassword: (email: string) =>
-    request<{ message: string }>("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
-  resetPassword: (token: string, password: string) =>
-    request<{ message: string }>("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
-  verifyEmail: (token: string) =>
-    request<{ message: string }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),
-  resendVerification: (email: string) =>
-    request<{ message: string }>("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email }) }),
-  login: async (email: string, password: string) => {
-    const form = new URLSearchParams({ username: email, password });
-    const result = await request<{ access_token: string; token_type: string }>(
-      "/auth/token",
-      { method: "POST", body: form, credentials: "include" },
-    );
-    return result.access_token;
-  },
-  refreshAccessToken,
-  setRefreshedTokenHandler: (handler: ((token: string) => void) | null) => {
-    refreshedTokenHandler = handler;
-  },
   me: (token: string) => request<User>("/auth/me", {}, token),
-  logout: (token: string) =>
-    request<void>("/auth/logout", { method: "POST", credentials: "include" }, token),
   applyToSell: (message: string, token: string) =>
     request<SellerApplication>(
       "/auth/seller-applications",
