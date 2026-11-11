@@ -12,10 +12,10 @@ export function BundleCheckoutPage() {
   const { bundleId } = useParams();
   const navigate = useNavigate();
   const [bundle, setBundle] = useState<ProductBundle | null>(null);
-  const [shipping, setShipping] = useState<ShippingSettings>({ delivery_charge: 0, estimated_delivery_days: 5, updated_at: null });
-  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [shipping] = useState<ShippingSettings>({ delivery_charge: 0, estimated_delivery_days: 0, updated_at: null });
+  const [addresses] = useState<SavedAddress[]>([]);
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
-  const [deliveryMethod, setDeliveryMethod] = useState<"home_delivery" | "campus_pickup">("home_delivery");
+  const [deliveryMethod, setDeliveryMethod] = useState<"home_delivery" | "campus_pickup">("campus_pickup");
   const [pickupLocationId, setPickupLocationId] = useState("");
   const [selectedAddress, setSelectedAddress] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -27,15 +27,10 @@ export function BundleCheckoutPage() {
   useEffect(() => {
     let active = true;
     if (!bundleId || !token) return;
-    Promise.all([api.getBundle(Number(bundleId)), api.getShippingSettings(), api.listAddresses(token), api.listPickupLocations()])
-      .then(([item, shippingSettings, saved, pickups]) => {
+    Promise.all([api.getBundle(Number(bundleId)), api.listPickupLocations()])
+      .then(([item, pickups]) => {
         if (!active) return;
-        setBundle(item); setShipping(shippingSettings); setAddresses(saved); setPickupLocations(pickups);
-        const preferred = saved.find((savedAddress) => savedAddress.is_default) ?? saved[0];
-        if (preferred) {
-          setSelectedAddress(String(preferred.id));
-          setAddress({ delivery_name: preferred.full_name, delivery_phone: preferred.phone_number, address_line: preferred.address_line, city: preferred.city, state: preferred.state, postal_code: preferred.pin_code });
-        }
+        setBundle(item); setPickupLocations(pickups);
       })
       .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "Could not load bundle checkout."); })
       .finally(() => { if (active) setLoading(false); });
@@ -44,18 +39,16 @@ export function BundleCheckoutPage() {
 
   function selectSaved(id: string) {
     setSelectedAddress(id);
-    const saved = addresses.find((item) => String(item.id) === id);
-    if (saved) setAddress({ delivery_name: saved.full_name, delivery_phone: saved.phone_number, address_line: saved.address_line, city: saved.city, state: saved.state, postal_code: saved.pin_code });
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const selectedPickup = pickupLocations.find((location) => String(location.id) === pickupLocationId);
-    if (!bundle || !token || !bundle.available || (deliveryMethod === "campus_pickup" && !selectedPickup)) return;
+    if (!bundle || !token || !bundle.available || !selectedPickup) return;
     setPlacing(true); setError("");
     try {
       const orderAddress = selectedPickup ? { ...address, address_line: selectedPickup.address_line, city: selectedPickup.city, state: selectedPickup.state, postal_code: selectedPickup.postal_code } : address;
-      const order = await api.placeBundleOrder(bundle.id, quantity, orderAddress, token, deliveryMethod, selectedPickup?.id);
+      const order = await api.placeBundleOrder(bundle.id, quantity, orderAddress, token, "campus_pickup", selectedPickup.id);
       navigate(`/orders/${order.id}`, { replace: true, state: { justPlaced: true } });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not place this bundle order."); }
     finally { setPlacing(false); }
@@ -67,9 +60,9 @@ export function BundleCheckoutPage() {
   const discount = Number(bundle.discount_amount) * quantity;
   const payable = Number(bundle.payable_price) * quantity;
   const selectedPickup = pickupLocations.find((location) => String(location.id) === pickupLocationId);
-  const deliveryCharge = deliveryMethod === "campus_pickup" ? 0 : Number(shipping.delivery_charge);
-  const total = payable + deliveryCharge;
-  return <section className="content-narrow checkout-page"><PageTitle eyebrow="BUNDLE CHECKOUT" title="Checkout" description={`Buying ${bundle.name}. Bundle orders are paid by Cash on Delivery.`} />{error && <Notice tone="error">{error}</Notice>}
+  const deliveryCharge = 0;
+  const total = payable;
+  return <section className="content-narrow checkout-page bundle-checkout-page"><PageTitle eyebrow="BUNDLE CHECKOUT" title="Checkout" description={`Buying ${bundle.name}. Bundle orders are paid by Cash on Delivery.`} />{error && <Notice tone="error">{error}</Notice>}
     <form className="checkout-layout" onSubmit={(event) => void submit(event)}><div className="checkout-main"><section className="checkout-card"><h2><MapPin size={18} /> Fulfillment</h2><div className="checkout-fulfillment-options"><label><input type="radio" name="bundle_delivery_method" checked={deliveryMethod === "home_delivery"} onChange={() => setDeliveryMethod("home_delivery")} /> Home delivery</label><label><input type="radio" name="bundle_delivery_method" checked={deliveryMethod === "campus_pickup"} onChange={() => setDeliveryMethod("campus_pickup")} /> Campus pickup</label></div>
       {deliveryMethod === "campus_pickup" ? <><label className="saved-address-selector">Pickup location<select required value={pickupLocationId} onChange={(event) => setPickupLocationId(event.target.value)}><option value="">Choose a campus location</option>{pickupLocations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.city}</option>)}</select></label>{selectedPickup && <div className="pickup-location-summary"><b>{selectedPickup.name}</b><span>{selectedPickup.address_line}, {selectedPickup.city}, {selectedPickup.state} {selectedPickup.postal_code}</span>{selectedPickup.instructions && <small>{selectedPickup.instructions}</small>}</div>}{!pickupLocations.length && <Notice tone="error">Campus pickup locations are not available right now.</Notice>}</> : addresses.length > 0 && <label className="saved-address-selector">Choose saved address<select value={selectedAddress} onChange={(event) => selectSaved(event.target.value)}><option value="">Enter a different address</option>{addresses.map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.city}{item.is_default ? " (Default)" : ""}</option>)}</select></label>}
       <div className="checkout-fields"><label>Recipient name<input required maxLength={120} value={address.delivery_name} onChange={(event) => { setSelectedAddress(""); setAddress((value) => ({ ...value, delivery_name: event.target.value })); }} /></label><label>Phone number<input required type="tel" minLength={10} maxLength={16} value={address.delivery_phone} onChange={(event) => { setSelectedAddress(""); setAddress((value) => ({ ...value, delivery_phone: event.target.value })); }} /></label>{deliveryMethod === "home_delivery" && <><label className="checkout-field-full">Address<input required minLength={5} maxLength={1000} value={address.address_line} onChange={(event) => { setSelectedAddress(""); setAddress((value) => ({ ...value, address_line: event.target.value })); }} /></label><label>City<input required maxLength={100} value={address.city} onChange={(event) => { setSelectedAddress(""); setAddress((value) => ({ ...value, city: event.target.value })); }} /></label><label>State<input required maxLength={100} value={address.state} onChange={(event) => { setSelectedAddress(""); setAddress((value) => ({ ...value, state: event.target.value })); }} /></label><label>PIN code<input required minLength={4} maxLength={20} value={address.postal_code} onChange={(event) => { setSelectedAddress(""); setAddress((value) => ({ ...value, postal_code: event.target.value })); }} /></label></>}</div>

@@ -17,8 +17,10 @@ from app.schemas.admin_dashboard import (
 
 def get_admin_dashboard(db: Session) -> AdminDashboardRead:
     total_users = db.scalar(select(func.count(User.id))) or 0
-    buyers = db.scalar(select(func.count(User.id)).where(User.role == UserRole.BUYER)) or 0
-    sellers = db.scalar(select(func.count(User.id)).where(User.role == UserRole.SELLER)) or 0
+    all_users = list(db.scalars(select(User)).all())
+    buyers = sum(UserRole.BUYER.value in (user.roles or []) for user in all_users)
+    sellers = sum(UserRole.SELLER.value in (user.roles or []) for user in all_users)
+    delivery_persons = sum(UserRole.DELIVERY_PERSON.value in (user.roles or []) for user in all_users)
     total_products = db.scalar(select(func.count(Product.id))) or 0
     total_orders = db.scalar(select(func.count(Order.id))) or 0
     total_revenue = db.scalar(
@@ -102,6 +104,7 @@ def get_admin_dashboard(db: Session) -> AdminDashboardRead:
         total_users=total_users,
         buyers=buyers,
         sellers=sellers,
+        delivery_persons=delivery_persons,
         total_products=total_products,
         total_orders=total_orders,
         total_revenue=total_revenue,

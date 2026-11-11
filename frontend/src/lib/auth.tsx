@@ -4,10 +4,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { ApiError, api } from "./api";
+import { ApiError, api, setAuthFailureHandler } from "./api";
 import { supabase } from "./supabase";
 import type { User } from "./types";
 
@@ -29,6 +30,7 @@ interface AuthContextValue {
   resendVerification: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  switchRole: (role: User["role"]) => Promise<void>;
   retryRestore: () => Promise<void>;
 }
 
@@ -43,25 +45,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const profileLoadVersion = useRef(0);
 
   const loadProfile = useCallback(async (accessToken: string, throwOnError = false) => {
+    const version = ++profileLoadVersion.current;
     setToken(accessToken);
     setIsLoading(true);
     setRestoreError(null);
     try {
-      setUser(await api.me(accessToken));
+      const profile = await api.me(accessToken);
+      if (version === profileLoadVersion.current) setUser(profile);
     } catch (reason) {
-      setUser(null);
-      setRestoreError(
-        reason instanceof ApiError && reason.status === 401
-          ? "Your sign-in session is no longer valid. Please sign in again."
-          : reason instanceof Error
-            ? reason.message
-            : "Could not restore your account.",
-      );
+      if (version === profileLoadVersion.current) {
+        setUser(null);
+        setRestoreError(
+          reason instanceof ApiError && reason.status === 401
+            ? "Your sign-in session is no longer valid. Please sign in again."
+            : reason instanceof Error
+              ? reason.message
+              : "Could not restore your account.",
+        );
+      }
       if (throwOnError) throw reason;
     } finally {
-      setIsLoading(false);
+      if (version === profileLoadVersion.current) setIsLoading(false);
     }
   }, []);
 
@@ -88,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      ++profileLoadVersion.current;
       if (!session) {
         setToken(null);
         setUser(null);
@@ -97,8 +105,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       queueMicrotask(() => void loadProfile(session.access_token));
     });
+    setAuthFailureHandler(() => {
+      ++profileLoadVersion.current;
+      setToken(null);
+      setUser(null);
+      setRestoreError("Your sign-in session has expired. Please sign in again.");
+      setIsLoading(false);
+      window.location.assign("/login");
+    });
     void retryRestore();
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      setAuthFailureHandler(null);
+    };
   }, [loadProfile, retryRestore]);
 
   const signIn = useCallback(async (email: string, password: string) => {
@@ -172,6 +191,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me(token));
   }, [token]);
 
+  const switchRole = useCallback(async (role: User["role"]) => {
+    if (!token) throw new Error("Please sign in again.");
+    const profile = await api.setActiveRole(role, token);
+    setUser(profile);
+  }, [token]);
+
   const value = useMemo(
     () => ({
       user,
@@ -186,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resendVerification,
       signOut,
       refreshProfile,
+      switchRole,
       retryRestore,
     }),
     [
@@ -201,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resendVerification,
       signOut,
       refreshProfile,
+      switchRole,
       retryRestore,
     ],
   );

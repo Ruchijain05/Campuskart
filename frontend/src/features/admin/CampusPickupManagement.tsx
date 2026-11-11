@@ -19,8 +19,9 @@ export function CampusPickupManagement() {
 
   async function load() {
     if (!token) return;
-    const [places, allOrders] = await Promise.all([api.listAdminPickupLocations(token), api.listAdminOrders(token)]);
-    setLocations(places); setOrders(allOrders.filter((order) => order.delivery_method === "campus_pickup"));
+    const [places, allOrders, jobs] = await Promise.all([api.listAdminPickupLocations(token), api.listAdminOrders(token), api.listAdminDeliveryJobs(token)]);
+    const assignedOrderIds = new Set(jobs.map((job) => job.order_id));
+    setLocations(places); setOrders(allOrders.filter((order) => order.delivery_method === "campus_pickup" && !assignedOrderIds.has(order.id)));
   }
   useEffect(() => { void load().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load pickup data.")); }, [token]);
 

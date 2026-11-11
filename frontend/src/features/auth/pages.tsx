@@ -17,7 +17,8 @@ export function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      navigate((location.state as { from?: string } | null)?.from ?? "/account", { replace: true });
+      const fallback = user.role === "delivery_person" ? "/delivery/jobs" : "/account";
+      navigate((location.state as { from?: string } | null)?.from ?? fallback, { replace: true });
     }
   }, [isLoading, location.state, navigate, user]);
 
@@ -38,7 +39,6 @@ export function LoginPage() {
     setBusy(true);
     try {
       await signIn(email, password);
-      navigate((location.state as { from?: string } | null)?.from ?? "/account", { replace: true });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not sign in.");
     } finally {

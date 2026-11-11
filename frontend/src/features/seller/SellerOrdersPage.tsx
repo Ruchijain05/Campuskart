@@ -63,8 +63,9 @@ export function SellerOrdersPage() {
                 <section className="seller-fulfillment-items" aria-label={`Your items in order ${order.id}`}>
                   <h3><Package size={16} /> Your products in this order</h3>
                   {order.items.map((item) => {
-                    const stepIndex = fulfillmentSteps.indexOf(item.fulfillment_status);
-                    const nextStep = fulfillmentSteps[stepIndex + 1];
+                    const availableSteps = order.delivery_method === "campus_pickup" ? fulfillmentSteps.slice(0, 2) : fulfillmentSteps;
+                    const stepIndex = availableSteps.indexOf(item.fulfillment_status);
+                    const nextStep = stepIndex >= 0 ? availableSteps[stepIndex + 1] : undefined;
                     return (
                       <div className="seller-fulfillment-item" key={item.id}>
                         <div className="seller-fulfillment-product"><b>{item.product_name}</b><span>{item.quantity} × {formatPrice(item.unit_price)} · {formatPrice(item.line_total)}</span></div>
@@ -83,10 +84,11 @@ export function SellerOrdersPage() {
                   <div className="seller-fulfillment-subtotal"><span>Your items subtotal</span><strong>{formatPrice(order.seller_subtotal)}</strong></div>
                 </section>
                 <aside className="seller-delivery-details">
-                  <h3><Truck size={16} /> Delivery details</h3>
+                  <h3><Truck size={16} /> {order.delivery_method === "campus_pickup" ? "Campus pickup handoff" : "Delivery details"}</h3>
                   <b>{order.delivery_name}</b>
                   <p><Phone size={13} /> {order.delivery_phone}</p>
                   <p><MapPin size={13} /> {order.address_line}, {order.city}, {order.state} {order.postal_code}</p>
+                  {order.delivery_method === "campus_pickup" && <small>Pack your items for CampusKart staff. {order.pickup_location_name ? `Pickup point: ${order.pickup_location_name}.` : "Staff will collect the packed order."}</small>}
                   <small>Payment: {order.payment_method.toUpperCase()} · {order.payment_status}</small>
                 </aside>
               </div>

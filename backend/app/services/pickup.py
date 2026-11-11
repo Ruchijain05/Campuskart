@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.auth import User
 from app.models.order import Order
+from app.models.delivery_job import DeliveryJob
 from app.models.pickup_location import CampusPickupLocation
 from app.schemas.orders import OrderCreate
 from app.schemas.pickup import PickupLocationInput
@@ -82,6 +83,9 @@ def mark_order_ready(db: Session, order_id: int) -> Order:
         raise HTTPException(status_code=404, detail="Order not found.")
     if order.delivery_method != "campus_pickup":
         raise HTTPException(status_code=409, detail="This order is not for campus pickup.")
+    assigned_job = db.scalar(select(DeliveryJob.id).where(DeliveryJob.order_id == order_id))
+    if assigned_job is not None and order.pickup_status != "ready":
+        raise HTTPException(status_code=409, detail="The assigned delivery person must mark this order ready at its pickup point.")
     if order.status == "cancelled":
         raise HTTPException(status_code=409, detail="A cancelled order cannot be marked ready for pickup.")
     if order.pickup_status == "ready":

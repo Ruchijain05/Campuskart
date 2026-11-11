@@ -47,12 +47,12 @@ export function SellerApplicationPage() {
       <div className="application-grid">
         <form className="application-card" onSubmit={submit}>
           <h2>Let's get you started</h2>
-          {user?.role === "seller" && <Notice tone="success">You're already approved as a seller. <Link to="/seller/products">Visit Seller Studio</Link>.</Notice>}
+          {user?.roles.includes("seller") && <Notice tone="success">You're already approved as a seller. Switch to the Seller role to <Link to="/seller/products">visit Seller Studio</Link>.</Notice>}
           {!user && <Notice>Sign in with your buyer account to apply. <Link to="/login">Sign in</Link>.</Notice>}
           {error && <Notice tone="error">{error}</Notice>}
           {success && <Notice tone="success">{success}</Notice>}
           <label>Tell us what you'd like to sell <span className="optional-label">OPTIONAL</span><textarea rows={5} maxLength={2000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What are you excited to bring to your campus community?" /></label>
-          <button className="button button-dark" disabled={!user || user.role !== "buyer" || busy}>{busy ? "Sending application..." : "Submit application"} <ArrowRight size={16} /></button>
+          <button className="button button-dark" disabled={!user || user.role !== "buyer" || user.roles.includes("seller") || busy}>{busy ? "Sending application..." : "Submit application"} <ArrowRight size={16} /></button>
           <small className="field-hint">Only buyer accounts can apply. You can apply again if a previous application was rejected.</small>
         </form>
         <aside className="application-aside">

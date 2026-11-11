@@ -77,7 +77,7 @@ def start_conversation(db: Session, buyer: User, details: StartConversation) -> 
     if product.seller_id == buyer.id:
         raise HTTPException(status_code=409, detail="You cannot message yourself about your own product.")
     seller = db.get(User, product.seller_id)
-    if seller is None or seller.role != UserRole.SELLER or not seller.is_active:
+    if seller is None or UserRole.SELLER.value not in (seller.roles or [seller.role.value]) or not seller.is_active:
         raise HTTPException(status_code=409, detail="The seller is unavailable for messages.")
     conversation = db.scalar(select(Conversation).where(
         Conversation.buyer_id == buyer.id, Conversation.product_id == product.id,

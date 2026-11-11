@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Activity, AlertTriangle, Check, FolderPlus, IndianRupee, Package, PackageCheck, Pencil, ShoppingCart, ShieldCheck, Star, Store, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Check, FolderPlus, IndianRupee, Package, PackageCheck, Pencil, ShoppingCart, ShieldCheck, Star, Store, Truck, UserPlus, UserRound, Users, X } from "lucide-react";
 import { LoadingState, Notice, PageTitle } from "../../components/SiteLayout";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
@@ -10,12 +10,13 @@ import { ReturnsManagement } from "./ReturnsManagement";
 import { AdminSupportTickets } from "./AdminSupportTickets";
 import { CouponManagement } from "./CouponManagement";
 import { ProductOffers } from "./ProductOffers";
-import { ShippingManagement } from "./ShippingManagement";
 import { InvoiceDownloadButton } from "../../components/InvoiceDownloadButton";
 import { PayoutManagement } from "./PayoutManagement";
 import { BundleManagement } from "./BundleManagement";
 import { CampusPickupManagement } from "./CampusPickupManagement";
 import { AdminProductRequests } from "./AdminProductRequests";
+import { DeliveryManagement } from "./DeliveryManagement";
+import { PrivilegedRoleManagement } from "./PrivilegedRoleManagement";
 
 function AdminBarChart({ title, values, field, color, icon }: {
   title: string;
@@ -61,6 +62,7 @@ function AdminOverview({ data }: { data: AdminDashboard }) {
     { label: "Total users", value: data.total_users, icon: Users, tone: "blue" },
     { label: "Buyers", value: data.buyers, icon: UserRound, tone: "violet" },
     { label: "Sellers", value: data.sellers, icon: Store, tone: "green" },
+    { label: "Delivery staff", value: data.delivery_persons, icon: Truck, tone: "violet" },
     { label: "Products", value: data.total_products, icon: Package, tone: "amber" },
     { label: "Orders", value: data.total_orders, icon: ShoppingCart, tone: "blue" },
     { label: "Total revenue", value: formatPrice(data.total_revenue), icon: IndianRupee, tone: "green" },
@@ -145,7 +147,12 @@ export function AdminPage() {
     } finally { setUpdatingOrderId(null); }
   }
 
-  function nextStatuses(orderStatus: OrderStatus): OrderStatus[] {
+  function nextStatuses(order: Order): OrderStatus[] {
+    if (order.delivery_method === "campus_pickup") {
+      if (order.status === "placed") return ["confirmed", "cancelled"];
+      if (order.status === "confirmed") return ["cancelled"];
+      return [];
+    }
     const transitions: Record<OrderStatus, OrderStatus[]> = {
       placed: ["confirmed", "cancelled"],
       confirmed: ["shipped", "cancelled"],
@@ -153,7 +160,7 @@ export function AdminPage() {
       delivered: [],
       cancelled: [],
     };
-    return transitions[orderStatus];
+    return transitions[order.status];
   }
 
   async function review(id: number, decision: "approved" | "rejected") {
@@ -240,7 +247,7 @@ export function AdminPage() {
         <section className="admin-card admin-orders-card">
           <div className="form-card-heading"><span className="card-icon"><PackageCheck size={19} /></span><div><h2>Orders</h2><p>Track and update order progress.</p></div><span className="count-badge">{orders.length}</span></div>
           {loading ? <LoadingState label="Loading orders..." /> : orders.length ? <div className="admin-order-list">{orders.map((order) => {
-            const availableStatuses = nextStatuses(order.status);
+            const availableStatuses = nextStatuses(order);
             return <article className="admin-order" key={order.id}>
               <div className="admin-order-heading"><div><b>ORDER #{order.id}</b><small>{new Date(order.created_at).toLocaleString()}</small></div><strong>{formatPrice(order.total)}</strong></div>
               {Number(order.discount_amount) > 0 && <small>Subtotal {formatPrice(order.subtotal)} · Coupon {order.coupon_code} · Discount −{formatPrice(order.discount_amount)}</small>}
@@ -309,8 +316,9 @@ export function AdminPage() {
       </div>
       <ProductOffers />
       <BundleManagement />
-      <ShippingManagement />
       <CampusPickupManagement />
+      <DeliveryManagement />
+      <PrivilegedRoleManagement />
       <PayoutManagement />
       <CouponManagement />
       <AdminSupportTickets />

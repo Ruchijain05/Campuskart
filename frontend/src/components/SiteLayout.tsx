@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { ArrowRight, Bell, GraduationCap, LogOut, MessageCircle, Search, ShoppingBag, ShoppingCart, UserRound } from "lucide-react";
+import { ArrowRight, Bell, ClipboardList, GraduationCap, Headphones, Heart, Home, LogOut, MessageCircle, Package, RotateCcw, Search, ShoppingBag, ShoppingCart, UserRound } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import type { UserRole } from "../lib/types";
 import { useCart } from "../lib/cart";
 import { CompareTray } from "../features/compare/CompareTray";
 import { useNotifications } from "../lib/notifications";
 import { api } from "../lib/api";
 
 export function SiteLayout() {
-  const { user, token, signOut } = useAuth();
+  const { user, token, signOut, switchRole } = useAuth();
   const { itemCount } = useCart();
   const { unreadCount } = useNotifications();
   const [search, setSearch] = useState("");
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [switchingRole, setSwitchingRole] = useState(false);
   const signOutDialogRef = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
 
@@ -55,6 +57,19 @@ export function SiteLayout() {
     }
   }
 
+  async function handleRoleSwitch(role: UserRole) {
+    if (!user || role === user.role) return;
+    setSwitchingRole(true);
+    try {
+      await switchRole(role);
+      navigate(role === "admin" ? "/admin" : role === "seller" ? "/seller/products" : role === "delivery_person" ? "/delivery/jobs" : "/account");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not switch roles.");
+    } finally {
+      setSwitchingRole(false);
+    }
+  }
+
   return (
     <div className="site-frame">
       <div className="announcement">
@@ -77,17 +92,20 @@ export function SiteLayout() {
           <button type="submit">Search</button>
         </form>
         <nav className="header-actions">
-          <NavLink to={user ? "/account" : "/login"} className="header-link">
+          <NavLink to={user ? user.role === "delivery_person" ? "/delivery/jobs" : "/account" : "/login"} className="header-link">
             <UserRound size={19} />
-            <span><small>{user ? "Hello," : "Welcome"}</small>{user?.full_name.split(" ")[0] ?? "Sign in"}</span>
+            <span><small>{user ? user.role === "delivery_person" ? "Staff" : "Hello," : "Welcome"}</small>{user?.full_name.split(" ")[0] ?? "Sign in"}</span>
           </NavLink>
-          <NavLink to="/cart" className="header-link cart-header-link" aria-label="Cart">
+          {user?.role !== "delivery_person" && <NavLink to="/cart" className="header-link cart-header-link" aria-label="Cart">
             <ShoppingCart size={19} /><span><small>Your items</small>Cart <b className="cart-count">{itemCount}</b></span>
-          </NavLink>
+          </NavLink>}
           {user ? (
-            <button type="button" className="header-link header-signout" onClick={() => setSignOutOpen(true)}>
-              <LogOut size={18} /><span><small>Account</small>Sign out</span>
-            </button>
+            <>
+              {user.roles.length > 1 && <label className="header-link role-switcher"><span><small>Active role</small></span><select aria-label="Switch active role" value={user.role} disabled={switchingRole} onChange={(event) => void handleRoleSwitch(event.target.value as UserRole)}>{user.roles.map((role) => <option key={role} value={role}>{role.replace("_", " ")}</option>)}</select></label>}
+              <button type="button" className="header-link header-signout" onClick={() => setSignOutOpen(true)}>
+                <LogOut size={18} /><span><small>Account</small>Sign out</span>
+              </button>
+            </>
           ) : (
             <Link to="/register" className="header-link header-register">
               <span><small>New here?</small>Create account</span>
@@ -117,24 +135,36 @@ export function SiteLayout() {
         </div>
       </dialog>
       <nav className="category-nav" aria-label="Main navigation">
-        <NavLink to="/" end>Discover</NavLink>
+        <NavLink to="/" end>Home</NavLink>
         <NavLink to="/bundles">Bundles</NavLink>
-        <NavLink to="/sell">Sell on CampusKart</NavLink>
-        {user && <NavLink to="/orders">My orders</NavLink>}
-        {(user?.role === "buyer" || user?.role === "seller") && <NavLink to="/messages" className="notification-nav-link"><MessageCircle size={14} /> Messages{unreadMessages > 0 && <b className="notification-count">{unreadMessages > 99 ? "99+" : unreadMessages}</b>}</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/buy-again">Buy again</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/wishlist">Wishlist</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/my-questions">My questions</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/returns">Returns &amp; refunds</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/support">Support</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/requests">Request anything</NavLink>}
-        {user?.role === "buyer" && <NavLink to="/notifications" className="notification-nav-link"><Bell size={14} /> Notifications{unreadCount > 0 && <b className="notification-count">{unreadCount > 99 ? "99+" : unreadCount}</b>}</NavLink>}
+        {user?.role !== "delivery_person" && <NavLink to="/sell">Sell on CampusKart</NavLink>}
+        {(user?.role === "seller" || user?.role === "admin") && <NavLink to="/orders">My orders</NavLink>}
+        {user?.role === "seller" && <NavLink to="/messages" className="notification-nav-link"><MessageCircle size={14} /> Messages{unreadMessages > 0 && <b className="notification-count">{unreadMessages > 99 ? "99+" : unreadMessages}</b>}</NavLink>}
         {user?.role === "seller" && <NavLink to="/seller/products">Seller studio</NavLink>}
         {user?.role === "seller" && <NavLink to="/seller/orders">Seller orders</NavLink>}
+        {user?.role === "delivery_person" && <NavLink to="/delivery/jobs">Delivery jobs</NavLink>}
         {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         <span className="nav-note">Good finds. Great campus energy.</span>
       </nav>
-      <main className="main-content"><Outlet /></main>
+      {user?.role === "buyer" ? (
+        <div className="buyer-layout">
+          <aside className="buyer-sidebar" aria-label="Customer navigation">
+            <span className="buyer-sidebar-heading">MY CAMPUSKART</span>
+            <NavLink to="/" end><Home size={19} strokeWidth={1.9} /><span>Home</span></NavLink>
+            <NavLink to="/account"><UserRound size={19} strokeWidth={1.9} /><span>My account</span></NavLink>
+            <NavLink to="/orders"><Package size={19} strokeWidth={1.9} /><span>My orders</span></NavLink>
+            <NavLink to="/buy-again"><RotateCcw size={19} strokeWidth={1.9} /><span>Buy again</span></NavLink>
+            <NavLink to="/wishlist"><Heart size={19} strokeWidth={1.9} /><span>Wishlist</span></NavLink>
+            <NavLink to="/my-questions"><MessageCircle size={19} strokeWidth={1.9} /><span>My questions</span></NavLink>
+            <NavLink to="/returns"><RotateCcw size={19} strokeWidth={1.9} /><span>Returns &amp; refunds</span></NavLink>
+            <NavLink to="/support"><Headphones size={19} strokeWidth={1.9} /><span>Support</span></NavLink>
+            <NavLink to="/requests"><ClipboardList size={19} strokeWidth={1.9} /><span>Request anything</span></NavLink>
+            <NavLink to="/notifications" className="notification-nav-link"><Bell size={19} strokeWidth={1.9} /><span>Notifications</span>{unreadCount > 0 && <b className="notification-count">{unreadCount > 99 ? "99+" : unreadCount}</b>}</NavLink>
+            <NavLink to="/messages" className="notification-nav-link"><MessageCircle size={19} strokeWidth={1.9} /><span>Messages</span>{unreadMessages > 0 && <b className="notification-count">{unreadMessages > 99 ? "99+" : unreadMessages}</b>}</NavLink>
+          </aside>
+          <main className="main-content"><Outlet /></main>
+        </div>
+      ) : <main className="main-content"><Outlet /></main>}
       <CompareTray />
       <footer className="site-footer">
         <Link className="footer-brand" to="/">campus<span>kart</span></Link>

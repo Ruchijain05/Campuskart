@@ -9,6 +9,8 @@ from app.schemas.auth import (
     SellerApplicationCreate,
     SellerApplicationRead,
     SellerApplicationReview,
+    ActiveRoleUpdate,
+    PrivilegedRoleUpdate,
     UserRead,
 )
 from app.services import auth as auth_service
@@ -19,6 +21,33 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.get("/me", response_model=UserRead)
 def get_me(user: User = Depends(get_current_user)) -> UserRead:
     return user
+
+
+@router.put("/active-role", response_model=UserRead)
+def set_active_role(details: ActiveRoleUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> UserRead:
+    assigned = user.roles or [user.role.value]
+    if details.role.value not in assigned:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="That role is not assigned to your account.")
+    user.role = details.role
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.put("/users/{user_id}/privileged-role", response_model=UserRead)
+def assign_privileged_role(
+    user_id: int,
+    details: PrivilegedRoleUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+) -> UserRead:
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    target.roles = list(dict.fromkeys([*(target.roles or [target.role.value]), details.role.value]))
+    db.commit()
+    db.refresh(target)
+    return target
 
 
 @router.post(

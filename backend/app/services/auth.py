@@ -85,6 +85,12 @@ def review_seller_application(
             status_code=status.HTTP_409_CONFLICT,
             detail="Applicant account no longer exists",
         )
+    if reviewed_status == SellerApplicationStatus.APPROVED and UserRole.SELLER.value in (applicant.roles or []):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only buyer accounts can be approved for seller access.",
+        )
     reviewed_at = datetime.now(timezone.utc)
     result = db.execute(
         update(SellerApplication)
@@ -106,6 +112,7 @@ def review_seller_application(
             detail="Application has already been reviewed",
         )
     if reviewed_status == SellerApplicationStatus.APPROVED:
+        applicant.roles = list(dict.fromkeys([*(applicant.roles or [UserRole.BUYER.value]), UserRole.SELLER.value]))
         applicant.role = UserRole.SELLER
 
     create_notification(

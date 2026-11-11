@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from app.api.routes import addresses, admin_dashboard, auth, bundles, cart, categories, conversations, coupons, health, low_stock, notifications, orders, payments, payouts, pickup, product_images, product_requests, products, questions, recently_viewed, recommendations, returns, reviews, seller_dashboard, seller_orders, shipping, support_tickets, wishlist
+from app.api.routes import addresses, admin_dashboard, auth, bundles, cart, categories, conversations, coupons, delivery, health, low_stock, notifications, orders, payments, payouts, pickup, product_images, product_requests, products, questions, recently_viewed, recommendations, returns, reviews, seller_dashboard, seller_orders, shipping, support_tickets, wishlist
 from app.core.config import settings
 
 
@@ -27,6 +27,7 @@ app.include_router(products.router, prefix=settings.api_v1_prefix)
 app.include_router(bundles.router, prefix=settings.api_v1_prefix)
 app.include_router(bundles.admin_router, prefix=settings.api_v1_prefix)
 app.include_router(pickup.router, prefix=settings.api_v1_prefix)
+app.include_router(delivery.router, prefix=settings.api_v1_prefix)
 app.include_router(conversations.router, prefix=settings.api_v1_prefix)
 app.include_router(product_images.router, prefix=settings.api_v1_prefix)
 app.include_router(cart.router, prefix=settings.api_v1_prefix)

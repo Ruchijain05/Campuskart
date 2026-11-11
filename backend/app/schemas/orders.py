@@ -22,15 +22,13 @@ class OrderCreate(BaseModel):
     state: str = Field(min_length=1, max_length=100)
     postal_code: str = Field(min_length=4, max_length=20)
     coupon_code: str | None = Field(default=None, min_length=3, max_length=32)
-    delivery_method: str = Field(default="home_delivery", pattern="^(home_delivery|campus_pickup)$")
+    delivery_method: str = Field(default="campus_pickup", pattern="^campus_pickup$")
     pickup_location_id: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_fulfillment(self) -> "OrderCreate":
         if self.delivery_method == "campus_pickup" and self.pickup_location_id is None:
             raise ValueError("Choose a campus pickup location")
-        if self.delivery_method == "home_delivery" and self.pickup_location_id is not None:
-            raise ValueError("Pickup location can only be used for campus pickup")
         return self
 
     @field_validator("delivery_name", "delivery_phone", "address_line", "city", "state", "postal_code")
@@ -108,6 +106,7 @@ class OrderRead(BaseModel):
     pickup_location_id: int | None = None
     pickup_location_name: str | None = None
     pickup_status: str = "not_applicable"
+    delivery_job_status: str | None = None
     delivery_name: str
     delivery_phone: str
     address_line: str
@@ -161,6 +160,8 @@ class SellerOrderRead(BaseModel):
     status: OrderStatus
     payment_method: str
     payment_status: str
+    delivery_method: str = "home_delivery"
+    pickup_location_name: str | None = None
     delivery_name: str
     delivery_phone: str
     address_line: str

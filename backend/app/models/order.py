@@ -40,6 +40,11 @@ class Order(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan", order_by="OrderItem.id")
+    delivery_job: Mapped["DeliveryJob | None"] = relationship(back_populates="order", uselist=False)
+
+    @property
+    def delivery_job_status(self) -> str | None:
+        return self.delivery_job.status if self.delivery_job is not None else None
 
 
 class OrderItem(Base):

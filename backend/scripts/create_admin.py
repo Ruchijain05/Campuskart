@@ -83,9 +83,8 @@ def main() -> None:
         raise SystemExit(f"Invalid admin details: {exc}") from exc
 
     with SessionLocal() as db:
-        existing_admin = db.scalar(
-            select(User.id).where(User.role == UserRole.ADMIN).limit(1)
-        )
+        existing_admin = next((user.id for user in db.scalars(select(User)).all()
+                               if UserRole.ADMIN.value in (user.roles or [user.role.value])), None)
         if existing_admin is not None:
             raise SystemExit("An admin already exists; bootstrap creation is disabled.")
         if db.scalar(select(User.id).where(User.email == str(admin_input.email))) is not None:
@@ -98,6 +97,7 @@ def main() -> None:
             email=str(admin_input.email),
             phone_number=admin_input.phone_number,
             role=UserRole.ADMIN,
+            roles=[UserRole.BUYER.value, UserRole.ADMIN.value],
             is_active=True,
             is_email_verified=True,
         )

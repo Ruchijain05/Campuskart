@@ -6,9 +6,8 @@ import { formatPrice } from "../../components/ProductCard";
 import { useAuth } from "../../lib/auth";
 import { useCart } from "../../lib/cart";
 import { api } from "../../lib/api";
-import type { DeliveryAddress, PickupLocation, SavedAddress, SavedAddressInput } from "../../lib/types";
+import type { DeliveryAddress, PickupLocation } from "../../lib/types";
 import type { CouponQuote } from "../../lib/types";
-import type { ShippingSettings } from "../../lib/types";
 
 interface RazorpayResult {
   razorpay_order_id: string;
@@ -75,21 +74,13 @@ export function CheckoutPage() {
   const [couponQuote, setCouponQuote] = useState<CouponQuote | null>(null);
   const [couponBusy, setCouponBusy] = useState(false);
   const [couponError, setCouponError] = useState("");
-  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
-  const [selectedAddressId, setSelectedAddressId] = useState("");
-  const [saveAddress, setSaveAddress] = useState(false);
-  const [addressLoadError, setAddressLoadError] = useState("");
-  const [shipping, setShipping] = useState<ShippingSettings>({ delivery_charge: 0, estimated_delivery_days: 5, updated_at: null });
-  const [deliveryMethod, setDeliveryMethod] = useState<"home_delivery" | "campus_pickup">("home_delivery");
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
   const [pickupLocationId, setPickupLocationId] = useState("");
   const unavailable = cart.items.some((item) => !item.available);
   const selectedPickupLocation = pickupLocations.find((location) => String(location.id) === pickupLocationId);
-  const deliveryCharge = deliveryMethod === "campus_pickup" ? 0 : Number(shipping.delivery_charge);
-  const totalDue = Number(couponQuote?.total ?? cart.total) + deliveryCharge;
+  const totalDue = Number(couponQuote?.total ?? cart.total);
 
   useEffect(() => {
-    api.getShippingSettings().then(setShipping).catch(() => setShipping({ delivery_charge: 0, estimated_delivery_days: 5, updated_at: null }));
     api.listPickupLocations().then(setPickupLocations).catch(() => setPickupLocations([]));
   }, []);
 
@@ -110,49 +101,8 @@ export function CheckoutPage() {
     }
   }
 
-  useEffect(() => {
-    let active = true;
-    if (!token || user?.role !== "buyer") return;
-    api.listAddresses(token).then((items) => {
-      if (!active) return;
-      setSavedAddresses(items);
-      const preferred = items.find((item) => item.is_default) ?? items[0];
-      if (preferred) {
-        setSelectedAddressId(String(preferred.id));
-        setAddress({
-          delivery_name: preferred.full_name,
-          delivery_phone: preferred.phone_number,
-          address_line: preferred.address_line,
-          city: preferred.city,
-          state: preferred.state,
-          postal_code: preferred.pin_code,
-        });
-      }
-    }).catch((reason: unknown) => {
-      if (active) setAddressLoadError(reason instanceof Error ? reason.message : "Could not load saved addresses.");
-    });
-    return () => { active = false; };
-  }, [token, user?.role]);
-
   function change(field: keyof DeliveryAddress, value: string) {
-    setSelectedAddressId("");
     setAddress((current) => ({ ...current, [field]: value }));
-  }
-
-  function selectAddress(id: string) {
-    setSelectedAddressId(id);
-    setSaveAddress(false);
-    if (!id) return;
-    const selected = savedAddresses.find((item) => String(item.id) === id);
-    if (!selected) return;
-    setAddress({
-      delivery_name: selected.full_name,
-      delivery_phone: selected.phone_number,
-      address_line: selected.address_line,
-      city: selected.city,
-      state: selected.state,
-      postal_code: selected.pin_code,
-    });
   }
 
   async function applyCoupon() {
@@ -173,37 +123,25 @@ export function CheckoutPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || !cart.items.length || unavailable || (deliveryMethod === "campus_pickup" && !selectedPickupLocation)) return;
+    if (!token || !cart.items.length || unavailable || !selectedPickupLocation) return;
     setError(""); setPlacing(true);
     let paymentWindowOpened = false;
     try {
-      if (saveAddress && deliveryMethod === "home_delivery") {
-        const savedInput: SavedAddressInput = {
-          full_name: address.delivery_name,
-          phone_number: address.delivery_phone,
-          address_line: address.address_line,
-          city: address.city,
-          state: address.state,
-          pin_code: address.postal_code,
-          is_default: savedAddresses.length === 0,
-        };
-        await api.createAddress(savedInput, token);
-      }
-      const orderAddress: DeliveryAddress = selectedPickupLocation ? {
+      const orderAddress: DeliveryAddress = {
         ...address,
         address_line: selectedPickupLocation.address_line,
         city: selectedPickupLocation.city,
         state: selectedPickupLocation.state,
         postal_code: selectedPickupLocation.postal_code,
-      } : address;
+      };
       if (paymentMethod === "cod" || totalDue === 0) {
-        const order = await api.placeOrder(orderAddress, token, couponQuote?.code, deliveryMethod, selectedPickupLocation?.id);
+        const order = await api.placeOrder(orderAddress, token, couponQuote?.code, "campus_pickup", selectedPickupLocation.id);
         clearAfterOrder();
         navigate(`/orders/${order.id}`, { replace: true, state: { justPlaced: true } });
         return;
       }
 
-      const payment = await api.startRazorpayPayment(orderAddress, token, couponQuote?.code, deliveryMethod, selectedPickupLocation?.id);
+      const payment = await api.startRazorpayPayment(orderAddress, token, couponQuote?.code, "campus_pickup", selectedPickupLocation.id);
       try {
         await loadRazorpay();
       } catch (reason) {
@@ -248,7 +186,7 @@ export function CheckoutPage() {
   }
   return (
     <section className="content-narrow checkout-page">
-      <PageTitle eyebrow="ALMOST YOURS" title="Checkout" description="Add a delivery address and review your order." />
+      <PageTitle eyebrow="ALMOST YOURS" title="Checkout" description="Choose a campus pickup point and review your order." />
       {cartError && <Notice tone="error">{cartError}</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
       {loading ? <LoadingState label="Loading your cart..." /> : !cart.items.length ? (
@@ -258,31 +196,18 @@ export function CheckoutPage() {
           <div className="checkout-main">
             <section className="checkout-card">
               <h2><MapPin size={18} /> Fulfillment</h2>
-              <div className="checkout-fulfillment-options"><label><input type="radio" name="delivery_method" checked={deliveryMethod === "home_delivery"} onChange={() => setDeliveryMethod("home_delivery")} /> Home delivery</label><label><input type="radio" name="delivery_method" checked={deliveryMethod === "campus_pickup"} onChange={() => setDeliveryMethod("campus_pickup")} /> Campus pickup</label></div>
-              {deliveryMethod === "campus_pickup" ? <>
-                <label className="saved-address-selector">Pickup location<select required value={pickupLocationId} onChange={(event) => setPickupLocationId(event.target.value)}><option value="">Choose a campus location</option>{pickupLocations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.city}</option>)}</select></label>
-                {selectedPickupLocation && <div className="pickup-location-summary"><b>{selectedPickupLocation.name}</b><span>{selectedPickupLocation.address_line}, {selectedPickupLocation.city}, {selectedPickupLocation.state} {selectedPickupLocation.postal_code}</span>{selectedPickupLocation.instructions && <small>{selectedPickupLocation.instructions}</small>}</div>}
-                {!pickupLocations.length && <Notice tone="error">Campus pickup locations are not available right now.</Notice>}
-              </> : <>
-              {addressLoadError && <Notice tone="error">{addressLoadError}</Notice>}
-              {savedAddresses.length > 0 && <label className="saved-address-selector">Choose a saved address<select value={selectedAddressId} onChange={(event) => selectAddress(event.target.value)}><option value="">Enter a different address</option>{savedAddresses.map((saved) => <option key={saved.id} value={saved.id}>{saved.full_name} · {saved.city}{saved.is_default ? " (Default)" : ""}</option>)}</select></label>}
-              </>}
+              <p>CampusKart orders are collected from the seller by CampusKart staff and brought to your selected campus pickup point.</p>
+              <label className="saved-address-selector">Pickup location<select required value={pickupLocationId} onChange={(event) => setPickupLocationId(event.target.value)}><option value="">Choose a campus location</option>{pickupLocations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.city}</option>)}</select></label>
+              {selectedPickupLocation && <div className="pickup-location-summary"><b>{selectedPickupLocation.name}</b><span>{selectedPickupLocation.address_line}, {selectedPickupLocation.city}, {selectedPickupLocation.state} {selectedPickupLocation.postal_code}</span>{selectedPickupLocation.instructions && <small>{selectedPickupLocation.instructions}</small>}</div>}
+              {!pickupLocations.length && <Notice tone="error">Campus pickup locations are not available right now.</Notice>}
               <div className="checkout-fields">
                 <label>Recipient name<input required maxLength={120} autoComplete="name" value={address.delivery_name} onChange={(event) => change("delivery_name", event.target.value)} /></label>
                 <label>Phone number<input required type="tel" autoComplete="tel" minLength={10} maxLength={16} value={address.delivery_phone} onChange={(event) => change("delivery_phone", event.target.value)} /></label>
-                {deliveryMethod === "home_delivery" && <>
-                <label className="checkout-field-full">Address<input required minLength={5} maxLength={1000} autoComplete="street-address" value={address.address_line} onChange={(event) => change("address_line", event.target.value)} placeholder="Building, street, hostel, room" /></label>
-                <label>City<input required maxLength={100} autoComplete="address-level2" value={address.city} onChange={(event) => change("city", event.target.value)} /></label>
-                <label>State<input required maxLength={100} autoComplete="address-level1" value={address.state} onChange={(event) => change("state", event.target.value)} /></label>
-                <label>PIN code<input required minLength={4} maxLength={20} autoComplete="postal-code" value={address.postal_code} onChange={(event) => change("postal_code", event.target.value)} /></label>
-                </>}
               </div>
-              {deliveryMethod === "home_delivery" && user?.role === "buyer" && !selectedAddressId && <label className="default-address-option"><input type="checkbox" checked={saveAddress} onChange={(event) => setSaveAddress(event.target.checked)} /> Save this address to my account</label>}
-              {deliveryMethod === "home_delivery" && user?.role === "buyer" && <Link className="checkout-address-link" to="/addresses">Manage saved addresses</Link>}
             </section>
             <section className="checkout-card checkout-payment">
               <h2><CheckCircle2 size={18} /> Payment method</h2>
-              <label><input type="radio" name="payment_method" value="cod" checked={paymentMethod === "cod"} onChange={() => setPaymentMethod("cod")} /> Cash on Delivery <small>Pay when your order arrives.</small></label>
+              <label><input type="radio" name="payment_method" value="cod" checked={paymentMethod === "cod"} onChange={() => setPaymentMethod("cod")} /> Pay at pickup <small>Pay when you collect your order.</small></label>
               <label><input type="radio" name="payment_method" value="razorpay" checked={paymentMethod === "razorpay"} onChange={() => setPaymentMethod("razorpay")} /> Pay online <small>Secure test-mode checkout with Razorpay.</small></label>
             </section>
           </div>
@@ -299,12 +224,12 @@ export function CheckoutPage() {
             </div>
             <div className="checkout-summary-line"><span>Subtotal</span><b>{formatPrice(couponQuote?.subtotal ?? cart.total)}</b></div>
             {couponQuote && <div className="checkout-summary-line checkout-discount-line"><span>Discount ({couponQuote.code})</span><b>−{formatPrice(couponQuote.discount_amount)}</b></div>}
-            <div className="checkout-summary-line"><span>{deliveryMethod === "campus_pickup" ? "Campus pickup" : "Delivery charge"}</span><b>{deliveryMethod === "campus_pickup" || !Number(shipping.delivery_charge) ? "Free" : formatPrice(shipping.delivery_charge)}</b></div>
-            <small className="delivery-estimate">{deliveryMethod === "campus_pickup" ? "We will notify you when your order is ready for collection." : `Estimated delivery in ${shipping.estimated_delivery_days} days after order placement.`}</small>
-            <div className="checkout-summary-total"><span>{totalDue === 0 ? "Total due" : paymentMethod === "cod" ? "Total due on delivery" : "Total to pay online"}</span><strong>{formatPrice(totalDue)}</strong></div>
+            <div className="checkout-summary-line"><span>Campus pickup</span><b>Free</b></div>
+            <small className="delivery-estimate">CampusKart staff will collect packed items from the seller and bring them to your pickup point. We will notify you when they are ready.</small>
+            <div className="checkout-summary-total"><span>{totalDue === 0 ? "Total due" : paymentMethod === "cod" ? "Total due at pickup" : "Total to pay online"}</span><strong>{formatPrice(totalDue)}</strong></div>
             {unavailable && <Notice tone="error">Some cart items are unavailable. Return to the cart and update or remove them.</Notice>}
             {verificationResult && <button type="button" className="button button-dark" disabled={placing} onClick={() => void verifyCapturedPayment(verificationResult)}>{placing ? "Verifying payment..." : "Retry payment verification"}</button>}
-            <button className="button button-dark" disabled={placing || unavailable || (deliveryMethod === "campus_pickup" && !selectedPickupLocation)}>{placing ? "Processing..." : totalDue === 0 ? "Place order · No payment due" : paymentMethod === "cod" ? "Place order · Cash on Delivery" : "Pay securely with Razorpay"}</button>
+            <button className="button button-dark" disabled={placing || unavailable || !selectedPickupLocation}>{placing ? "Processing..." : totalDue === 0 ? "Place order · No payment due" : paymentMethod === "cod" ? "Place order · Pay at pickup" : "Pay securely with Razorpay"}</button>
             <Link className="checkout-back" to="/cart"><ArrowLeft size={14} /> Back to cart</Link>
           </aside>
         </form>

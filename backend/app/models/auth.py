@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum as SqlEnum, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import DateTime, Enum as SqlEnum, ForeignKey, JSON, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -12,6 +12,7 @@ class UserRole(str, Enum):
     BUYER = "buyer"
     SELLER = "seller"
     ADMIN = "admin"
+    DELIVERY_PERSON = "delivery_person"
 
 
 class SellerApplicationStatus(str, Enum):
@@ -38,6 +39,7 @@ class User(Base):
         default=UserRole.BUYER,
         nullable=False,
     )
+    roles: Mapped[list[str]] = mapped_column(JSON, default=lambda: [UserRole.BUYER.value], nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     is_email_verified: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

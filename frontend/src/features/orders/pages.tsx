@@ -30,12 +30,23 @@ function paymentLabel(method: string) {
   return "Cash on Delivery";
 }
 
+function pickupProgressMessage(status: Order["delivery_job_status"]): string {
+  switch (status) {
+    case "assigned": return "CampusKart staff are assigned and will collect your packed order from the seller.";
+    case "collected_from_seller": return "CampusKart staff collected your order and are taking it to the pickup point.";
+    case "ready_at_pickup": return "Your order is ready at the selected campus pickup point.";
+    case "collected_by_buyer": return "Your order has been collected.";
+    case "delivery_issue": return "Pickup is delayed. CampusKart staff will follow up.";
+    default: return "We will notify you when your order is ready.";
+  }
+}
+
 function OrderCard({ order }: { order: Order }) {
   return (
     <article className="order-card">
       <div className="order-card-heading"><div><span className="eyebrow">ORDER #{order.id}</span><h2>{new Date(order.created_at).toLocaleString()}</h2></div><span className="order-status">{statusLabels[order.status]}</span></div>
       <div className="order-card-items">{order.items.map((item) => <div key={item.id}><span>{item.product_name} × {item.quantity}</span><b>{formatPrice(item.line_total)}</b></div>)}</div>
-      <div className="order-card-footer"><span>{order.delivery_method === "campus_pickup" ? `Campus pickup · ${order.pickup_status.replaceAll("_", " ")}` : "Home delivery"} · {paymentLabel(order.payment_method)} · Payment {order.payment_status}</span><strong>{formatPrice(order.total)}</strong><Link className="text-link" to={`/orders/${order.id}`}>View order <ArrowRight size={14} /></Link><InvoiceDownloadButton orderId={order.id} /></div>
+      <div className="order-card-footer"><span>{order.delivery_method === "campus_pickup" ? `Campus pickup · ${order.pickup_status.replaceAll("_", " ")}${order.delivery_job_status ? ` · ${order.delivery_job_status.replaceAll("_", " ")}` : ""}` : "Home delivery"} · {paymentLabel(order.payment_method)} · Payment {order.payment_status}</span><strong>{formatPrice(order.total)}</strong><Link className="text-link" to={`/orders/${order.id}`}>View order <ArrowRight size={14} /></Link><InvoiceDownloadButton orderId={order.id} /></div>
     </article>
   );
 }
@@ -103,7 +114,7 @@ export function OrderDetailPage() {
       {location.state?.justPlaced && <Notice tone="success">Order placed successfully. {order.payment_method === "razorpay" ? "Your Razorpay payment was verified." : "Your items have been reserved and payment is due on delivery."}</Notice>}
       <PageTitle eyebrow={`ORDER #${order.id}`} title="Order details" description={`Placed ${new Date(order.created_at).toLocaleString()}`} />
       <div className="order-detail-layout"><div className="checkout-card"><h2>Items</h2>{order.items.map((item) => <div className="checkout-summary-line" key={item.id}><span>{item.product_name} × {item.quantity}<small>{formatPrice(item.unit_price)} each</small></span><b>{formatPrice(item.line_total)}</b></div>)}<div className="checkout-summary-line"><span>Subtotal</span><b>{formatPrice(order.subtotal)}</b></div>{Number(order.discount_amount) > 0 && <div className="checkout-summary-line checkout-discount-line"><span>{order.discount_description ?? `Coupon discount${order.coupon_code ? ` (${order.coupon_code})` : ""}`}</span><b>−{formatPrice(order.discount_amount)}</b></div>}<div className="checkout-summary-line"><span>{order.delivery_method === "campus_pickup" ? "Pickup charge" : "Delivery charge"}</span><b>{Number(order.shipping_fee) ? formatPrice(order.shipping_fee) : "Free"}</b></div><div className="checkout-summary-total"><span>Total paid / due</span><strong>{formatPrice(order.total)}</strong></div></div>
-        <aside className="checkout-card"><h2>{order.delivery_method === "campus_pickup" ? "Campus pickup" : "Delivery"}</h2><p><b>{order.delivery_name}</b><br />{order.delivery_phone}<br />{order.address_line}<br />{order.city}, {order.state} {order.postal_code}</p>{order.delivery_method === "campus_pickup" && <div className={`pickup-status-panel pickup-status-${order.pickup_status}`}><b>{order.pickup_status === "ready" ? "Ready for collection" : order.pickup_status === "collected" ? "Collected" : "Preparing your pickup"}</b>{order.pickup_status === "awaiting_pickup" && <small>We will notify you when your order is ready.</small>}</div>}<h2>Payment</h2><p>{paymentLabel(order.payment_method)} · Status: {order.payment_status}</p>{order.payment_method === "razorpay" && <p className="payment-reference">{order.razorpay_payment_id ? <>Payment ID: <code>{order.razorpay_payment_id}</code></> : <>Payment order: <code>{order.razorpay_order_id}</code></>}</p>}<h2>Order tracking</h2><OrderProgress status={order.status} />{order.estimated_delivery_at && <p><b>Estimated delivery:</b><br />{new Date(order.estimated_delivery_at).toLocaleString()}</p>}{order.courier_name && <p><b>Courier:</b> {order.courier_name}</p>}{order.tracking_id && <p><b>Tracking ID:</b> <code>{order.tracking_id}</code></p>}</aside></div>
+        <aside className="checkout-card"><h2>{order.delivery_method === "campus_pickup" ? "Campus pickup" : "Delivery"}</h2><p><b>{order.delivery_name}</b><br />{order.delivery_phone}<br />{order.address_line}<br />{order.city}, {order.state} {order.postal_code}</p>{order.delivery_method === "campus_pickup" && <div className={`pickup-status-panel pickup-status-${order.pickup_status}`}><b>{order.pickup_status === "ready" ? "Ready for collection" : order.pickup_status === "collected" ? "Collected" : "Preparing your pickup"}</b><small>{pickupProgressMessage(order.delivery_job_status)}</small></div>}<h2>Payment</h2><p>{paymentLabel(order.payment_method)} · Status: {order.payment_status}</p>{order.payment_method === "razorpay" && <p className="payment-reference">{order.razorpay_payment_id ? <>Payment ID: <code>{order.razorpay_payment_id}</code></> : <>Payment order: <code>{order.razorpay_order_id}</code></>}</p>}<h2>Order tracking</h2><OrderProgress status={order.status} />{order.estimated_delivery_at && <p><b>Estimated delivery:</b><br />{new Date(order.estimated_delivery_at).toLocaleString()}</p>}{order.courier_name && <p><b>Courier:</b> {order.courier_name}</p>}{order.tracking_id && <p><b>Tracking ID:</b> <code>{order.tracking_id}</code></p>}</aside></div>
       {user?.role === "buyer" && order.status === "delivered" && <section className="return-request-panel">
         <h2><RotateCcw size={18} /> Returns &amp; refunds</h2>
         {returnError && <Notice tone="error">{returnError}</Notice>}

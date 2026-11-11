@@ -22,6 +22,7 @@ class AdminDashboardRead(BaseModel):
     total_users: int
     buyers: int
     sellers: int
+    delivery_persons: int = 0
     total_products: int
     total_orders: int
     total_revenue: Decimal

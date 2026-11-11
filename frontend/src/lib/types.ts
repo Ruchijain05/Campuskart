@@ -1,4 +1,4 @@
-export type UserRole = "buyer" | "seller" | "admin";
+export type UserRole = "buyer" | "seller" | "admin" | "delivery_person";
 export type ShoppingSectionSlug = "male" | "female" | "special_gifts";
 
 export interface ShoppingSection {
@@ -18,6 +18,7 @@ export interface User {
   email: string;
   phone_number: string;
   role: UserRole;
+  roles: UserRole[];
   is_email_verified: boolean;
   created_at: string;
 }
@@ -114,6 +115,8 @@ export interface SellerOrder {
   status: OrderStatus;
   payment_method: string;
   payment_status: string;
+  delivery_method: "home_delivery" | "campus_pickup";
+  pickup_location_name: string | null;
   delivery_name: string;
   delivery_phone: string;
   address_line: string;
@@ -123,6 +126,32 @@ export interface SellerOrder {
   seller_subtotal: string | number;
   created_at: string;
   items: SellerOrderItem[];
+}
+
+export interface DeliveryPersonSummary {
+  id: number;
+  full_name: string;
+  email: string;
+  phone_number: string;
+}
+
+export interface DeliveryJob {
+  id: number;
+  order_id: number;
+  delivery_person_id: number;
+  status: "assigned" | "collected_from_seller" | "ready_at_pickup" | "collected_by_buyer" | "delivery_issue";
+  pickup_location_name: string;
+  buyer_name: string;
+  buyer_phone: string;
+  pickup_address: string;
+  sellers: { full_name: string; phone_number: string; products: string[] }[];
+  products: string[];
+  failure_note: string | null;
+  assigned_at: string;
+  collected_from_seller_at: string | null;
+  ready_at_pickup_at: string | null;
+  collected_by_buyer_at: string | null;
+  updated_at: string;
 }
 
 export interface Order {
@@ -144,6 +173,7 @@ export interface Order {
   pickup_location_id: number | null;
   pickup_location_name: string | null;
   pickup_status: "not_applicable" | "awaiting_pickup" | "ready" | "collected";
+  delivery_job_status?: "assigned" | "collected_from_seller" | "ready_at_pickup" | "collected_by_buyer" | "delivery_issue" | null;
   subtotal: string | number;
   discount_amount: string | number;
   shipping_fee: string | number;
@@ -341,6 +371,7 @@ export interface AdminDashboard {
   total_users: number;
   buyers: number;
   sellers: number;
+  delivery_persons: number;
   total_products: number;
   total_orders: number;
   total_revenue: string | number;

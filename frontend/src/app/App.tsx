@@ -22,6 +22,7 @@ import { BundlesPage, BundleDetailPage } from "../features/bundles/pages";
 import { BundleCheckoutPage } from "../features/bundles/BundleCheckoutPage";
 import { MessagesPage } from "../features/messages/MessagesPage";
 import { ProductRequestsPage } from "../features/requests/ProductRequestsPage";
+import { DeliveryJobsPage } from "../features/delivery/DeliveryPages";
 
 export function App() {
   return (
@@ -39,8 +40,10 @@ export function App() {
           <Route path="reset-password" element={<ResetPasswordPage />} />
           <Route path="verify-email" element={<VerifyEmailPage />} />
           <Route path="sell" element={<SellerApplicationPage />} />
-          <Route element={<ProtectedRoute />}>
+          <Route element={<ProtectedRoute roles={["buyer", "seller", "admin", "delivery_person"]} />}>
             <Route path="account" element={<AccountPage />} />
+          </Route>
+          <Route element={<ProtectedRoute roles={["buyer", "seller", "admin"]} />}>
             <Route path="cart" element={<CartPage />} />
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="orders" element={<MyOrdersPage />} />
@@ -57,6 +60,9 @@ export function App() {
             <Route path="wishlist" element={<WishlistPage />} />
             <Route path="buy-again" element={<BuyAgainPage />} />
             <Route path="compare" element={<ComparePage />} />
+          </Route>
+          <Route element={<ProtectedRoute roles={["delivery_person"]} />}>
+            <Route path="delivery/jobs" element={<DeliveryJobsPage />} />
           </Route>
           <Route element={<ProtectedRoute roles={["buyer", "seller"]} />}>
             <Route path="messages" element={<MessagesPage />} />

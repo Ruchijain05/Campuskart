@@ -104,8 +104,9 @@ def seller_payout_history(db: Session, seller_id: int) -> dict:
 
 def admin_payout_dashboard(db: Session) -> AdminPayoutDashboardRead:
     sellers = list(db.scalars(
-        select(User).where(User.role == UserRole.SELLER).order_by(User.full_name, User.id)
+        select(User).order_by(User.full_name, User.id)
     ).all())
+    sellers = [seller for seller in sellers if UserRole.SELLER.value in (seller.roles or [])]
     seller_metrics = [
         AdminSellerEarningsRead(
             seller_id=seller.id,
@@ -133,8 +134,10 @@ def admin_payout_dashboard(db: Session) -> AdminPayoutDashboardRead:
 
 def create_payout(db: Session, details: PayoutCreate) -> SellerPayout:
     seller = db.scalar(
-        select(User).where(User.id == details.seller_id, User.role == UserRole.SELLER).with_for_update()
+        select(User).where(User.id == details.seller_id).with_for_update()
     )
+    if seller is not None and UserRole.SELLER.value not in (seller.roles or []):
+        seller = None
     if seller is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seller not found")
     balance = _seller_earnings(db, seller.id)

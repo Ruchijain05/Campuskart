@@ -4,6 +4,8 @@ import type {
   Product,
   ProductInput,
   SellerApplication,
+  DeliveryPersonSummary,
+  DeliveryJob,
   CategoryTree,
   Cart,
   Order,
@@ -91,6 +93,11 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:800
 const API_PREFIX = `${API_BASE_URL}/api/v1`;
 
 let refreshInFlight: Promise<string> | null = null;
+let onAuthFailure: (() => void) | null = null;
+
+export function setAuthFailureHandler(handler: (() => void) | null) {
+  onAuthFailure = handler;
+}
 
 async function request<T>(
   path: string,
@@ -102,12 +109,22 @@ async function request<T>(
   if (options.body && !(options.body instanceof URLSearchParams) && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  // Resolve the session for every authenticated request. The token argument is
+  // retained for existing callers, but is only used to indicate auth intent.
+  const session = token ? await supabase.auth.getSession() : null;
+  const currentToken = session?.data.session?.access_token;
+  if (token && currentToken) headers.set("Authorization", `Bearer ${currentToken}`);
 
   const response = await fetch(`${API_PREFIX}${path}`, { ...options, headers });
   if (response.status === 401 && token && retryAfterRefresh) {
-    const refreshedToken = await refreshAccessToken();
-    return request<T>(path, options, refreshedToken, false);
+    try {
+      const refreshedToken = await refreshAccessToken();
+      return request<T>(path, options, refreshedToken, false);
+    } catch (reason) {
+      await supabase.auth.signOut().catch(() => undefined);
+      onAuthFailure?.();
+      throw reason;
+    }
   }
   if (!response.ok) {
     const body = await response.json().catch(() => null) as
@@ -128,8 +145,13 @@ function refreshAccessToken(): Promise<string> {
   if (!refreshInFlight) {
     refreshInFlight = supabase.auth.refreshSession()
       .then(({ data, error }) => {
-        if (error) throw error;
-        if (!data.session) throw new ApiError("Your sign-in session has expired.", 401);
+        if (error) {
+          throw error;
+        }
+        if (!data.session) {
+          const refreshError = new ApiError("Your sign-in session has expired.", 401);
+          throw refreshError;
+        }
         return data.session.access_token;
       })
       .finally(() => {
@@ -228,7 +250,7 @@ export const api = {
   getProduct: (id: number) => request<Product>(`/products/${id}`),
   listBundles: () => request<ProductBundle[]>("/bundles"),
   getBundle: (id: number) => request<ProductBundle>(`/bundles/${id}`),
-  placeBundleOrder: (id: number, quantity: number, address: DeliveryAddress, token: string, delivery_method?: "home_delivery" | "campus_pickup", pickup_location_id?: number) =>
+  placeBundleOrder: (id: number, quantity: number, address: DeliveryAddress, token: string, delivery_method: "campus_pickup", pickup_location_id: number) =>
     request<Order>(`/bundles/${id}/orders`, { method: "POST", body: JSON.stringify({ ...address, quantity, delivery_method, pickup_location_id }) }, token),
   listAdminBundles: (token: string) => request<ProductBundle[]>("/admin/bundles", {}, token),
   createBundle: (input: ProductBundleInput, token: string) =>
@@ -301,9 +323,9 @@ export const api = {
     request<Cart>(`/cart/items/${productId}`, { method: "PATCH", body: JSON.stringify({ quantity }) }, token),
   removeCartItem: (productId: number, token: string) =>
     request<Cart>(`/cart/items/${productId}`, { method: "DELETE" }, token),
-  placeOrder: (address: DeliveryAddress, token: string, coupon_code?: string, delivery_method?: "home_delivery" | "campus_pickup", pickup_location_id?: number) =>
+  placeOrder: (address: DeliveryAddress, token: string, coupon_code: string | undefined, delivery_method: "campus_pickup", pickup_location_id: number) =>
     request<Order>("/orders", { method: "POST", body: JSON.stringify({ ...address, coupon_code, delivery_method, pickup_location_id }) }, token),
-  startRazorpayPayment: (address: DeliveryAddress, token: string, coupon_code?: string, delivery_method?: "home_delivery" | "campus_pickup", pickup_location_id?: number) =>
+  startRazorpayPayment: (address: DeliveryAddress, token: string, coupon_code: string | undefined, delivery_method: "campus_pickup", pickup_location_id: number) =>
     request<RazorpayPaymentStart>("/payments/razorpay/orders", { method: "POST", body: JSON.stringify({ ...address, coupon_code, delivery_method, pickup_location_id }) }, token),
   verifyRazorpayPayment: (details: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }, token: string) =>
     request<Order>("/payments/razorpay/verify", { method: "POST", body: JSON.stringify(details) }, token),
@@ -346,6 +368,16 @@ export const api = {
   updateOrderShipping: (id: number, input: OrderShippingInput, token: string) =>
     request<Order>(`/orders/${id}/shipping`, { method: "PATCH", body: JSON.stringify(input) }, token),
   markPickupReady: (id: number, token: string) => request<Order>(`/orders/${id}/pickup/ready`, { method: "PATCH" }, token),
+  listDeliveryPeople: (token: string) => request<DeliveryPersonSummary[]>("/delivery/people", {}, token),
+  createDeliveryPerson: (details: { email: string }, token: string) =>
+    request<DeliveryPersonSummary>("/delivery/people", { method: "POST", body: JSON.stringify(details) }, token),
+  listEligibleDeliveryOrders: (token: string) => request<Order[]>("/delivery/eligible-orders", {}, token),
+  listAdminDeliveryJobs: (token: string) => request<DeliveryJob[]>("/delivery/jobs/admin", {}, token),
+  assignDeliveryJob: (orderId: number, delivery_person_id: number, token: string) =>
+    request<DeliveryJob>(`/delivery/jobs/${orderId}/assign`, { method: "POST", body: JSON.stringify({ delivery_person_id }) }, token),
+  listMyDeliveryJobs: (token: string) => request<DeliveryJob[]>("/delivery/jobs", {}, token),
+  updateDeliveryJob: (jobId: number, status: DeliveryJob["status"], failure_note: string | null, token: string) =>
+    request<DeliveryJob>(`/delivery/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify({ status, failure_note }) }, token),
   updateOrderStatus: (id: number, status: OrderStatus, token: string) =>
     request<Order>(`/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }, token),
   getWishlist: (token: string) => request<Product[]>("/wishlist", {}, token),
@@ -387,6 +419,9 @@ export const api = {
   deleteCategory: (id: number, token: string) =>
     request<void>(`/categories/${id}`, { method: "DELETE" }, token),
   me: (token: string) => request<User>("/auth/me", {}, token),
+  setActiveRole: (role: User["role"], token: string) => request<User>("/auth/active-role", { method: "PUT", body: JSON.stringify({ role }) }, token),
+  assignPrivilegedRole: (userId: number, role: "admin" | "delivery_person", token: string) =>
+    request<User>(`/auth/users/${userId}/privileged-role`, { method: "PUT", body: JSON.stringify({ role }) }, token),
   applyToSell: (message: string, token: string) =>
     request<SellerApplication>(
       "/auth/seller-applications",

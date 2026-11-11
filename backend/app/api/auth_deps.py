@@ -14,8 +14,6 @@ from app.core.config import settings
 from app.models.auth import User, UserRole
 
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
 @lru_cache(maxsize=1)
 def _jwks_client() -> jwt.PyJWKClient:
     if not settings.supabase_url:
@@ -142,7 +140,8 @@ def get_current_user(
 
 def require_roles(*roles: UserRole) -> Callable[..., User]:
     def role_dependency(user: User = Depends(get_current_user)) -> User:
-        if user.role not in roles:
+        assigned = user.roles or [user.role.value]
+        if user.role.value not in assigned or user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user
 

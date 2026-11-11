@@ -53,8 +53,24 @@ class UserRead(BaseModel):
     email: EmailStr
     phone_number: str
     role: UserRole
+    roles: list[UserRole]
     is_email_verified: bool
     created_at: datetime
+
+
+class ActiveRoleUpdate(BaseModel):
+    role: UserRole
+
+
+class PrivilegedRoleUpdate(BaseModel):
+    role: UserRole
+
+    @field_validator("role")
+    @classmethod
+    def require_privileged_role(cls, value: UserRole) -> UserRole:
+        if value not in {UserRole.ADMIN, UserRole.DELIVERY_PERSON}:
+            raise ValueError("Only admin and delivery person roles can be assigned here.")
+        return value
 
 
 class SellerApplicationCreate(BaseModel):

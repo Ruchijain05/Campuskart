@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     supabase_jwt_audience: str = "authenticated"
     supabase_secret_key: SecretStr | None = None
     supabase_service_role_key: SecretStr | None = None
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/campuskart"
+    database_url: str
     frontend_origins: list[str] = ["http://localhost:5173"]
     frontend_base_url: str = "http://localhost:5173"
     smtp_host: str | None = None

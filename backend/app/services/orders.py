@@ -163,6 +163,11 @@ def update_order_status(
             detail="This order has an unsupported status and cannot be updated.",
         ) from exc
     next_status = update_in.status
+    if order.delivery_method == "campus_pickup" and next_status in {OrderStatus.SHIPPED, OrderStatus.DELIVERED}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Campus pickup delivery progress is managed through the assigned staff job.",
+        )
     if order.payment_method == "razorpay" and order.payment_status == "pending":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

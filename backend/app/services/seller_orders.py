@@ -34,6 +34,8 @@ def list_seller_orders(db: Session, seller_id: int) -> list[SellerOrderRead]:
                 status=order.status,
                 payment_method=order.payment_method,
                 payment_status=order.payment_status,
+                delivery_method=order.delivery_method,
+                pickup_location_name=order.pickup_location_name,
                 delivery_name=order.delivery_name,
                 delivery_phone=order.delivery_phone,
                 address_line=order.address_line,
@@ -81,7 +83,12 @@ def update_item_fulfillment(
         current = FulfillmentStatus(item.fulfillment_status)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This item has an unsupported fulfillment status") from exc
-    if next_status != current and next_status != FULFILLMENT_NEXT[current]:
+    allowed_next = (
+        FulfillmentStatus.PACKED if order.delivery_method == "campus_pickup" and current == FulfillmentStatus.PROCESSING
+        else None if order.delivery_method == "campus_pickup"
+        else FULFILLMENT_NEXT[current]
+    )
+    if next_status != current and next_status != allowed_next:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Item cannot move from {current.value} to {next_status.value}.",

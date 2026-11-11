@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.auth_deps import get_current_user, require_roles
+from app.api.auth_deps import require_roles
 from app.api.deps import get_db
 from app.models.auth import User, UserRole
 from app.schemas.buy_again import BuyAgainProductRead
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 def place_order(
     order_in: OrderCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(UserRole.BUYER, UserRole.SELLER, UserRole.ADMIN)),
 ) -> OrderRead:
     return order_service.place_order(db, user.id, order_in)
 
@@ -30,7 +30,7 @@ def place_order(
 @router.get("", response_model=list[OrderRead])
 def list_orders(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(UserRole.BUYER, UserRole.SELLER, UserRole.ADMIN)),
 ) -> list[OrderRead]:
     return order_service.list_orders(db, user.id)
 
@@ -55,7 +55,7 @@ def list_buy_again_products(
 def download_order_invoice(
     order_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(UserRole.BUYER, UserRole.SELLER, UserRole.ADMIN)),
 ) -> Response:
     order = db.scalar(select(Order).options(joinedload(Order.items)).where(Order.id == order_id))
     if order is None or (user.role != UserRole.ADMIN and order.user_id != user.id):
@@ -101,7 +101,7 @@ def mark_pickup_ready(
 def get_order(
     order_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_roles(UserRole.BUYER, UserRole.SELLER, UserRole.ADMIN)),
 ) -> OrderRead:
     order = order_service.get_order(db, user.id, order_id)
     if order is None:
