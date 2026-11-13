@@ -7,6 +7,7 @@ from app.core.config import settings
 from app import models
 
 config = context.config
+# Alembic uses the administrative connection; FastAPI uses APP_DATABASE_URL.
 config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 if config.config_file_name is not None:

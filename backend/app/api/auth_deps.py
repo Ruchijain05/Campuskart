@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.core.config import settings
 from app.models.auth import User, UserRole
+from app.services.role_assignments import get_role_id, grant_role
 
 bearer_scheme = HTTPBearer(auto_error=False)
 @lru_cache(maxsize=1)
@@ -58,7 +59,7 @@ def _claim_string(claims: dict[str, object], key: str) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _new_user_from_claims(claims: dict[str, object], auth_user_id: UUID) -> User:
+def _new_user_from_claims(claims: dict[str, object], auth_user_id: UUID, role_id: int) -> User:
     email = _claim_string(claims, "email")
     if email is None:
         raise HTTPException(
@@ -79,7 +80,7 @@ def _new_user_from_claims(claims: dict[str, object], auth_user_id: UUID) -> User
         full_name=str(full_name).strip()[:120] or email.partition("@")[0],
         email=email.casefold(),
         phone_number=str(phone_number)[:16] if isinstance(phone_number, str) else "",
-        role=UserRole.BUYER,
+        role_id=role_id,
         is_active=True,
         is_email_verified=True,
     )
@@ -108,7 +109,7 @@ def get_current_user(
 
     user = db.scalar(select(User).where(User.auth_user_id == auth_user_id))
     if user is None:
-        candidate = _new_user_from_claims(claims, auth_user_id)
+        candidate = _new_user_from_claims(claims, auth_user_id, get_role_id(db, UserRole.BUYER))
         email_owner = db.scalar(select(User.id).where(User.email == candidate.email))
         if email_owner is not None:
             raise HTTPException(
@@ -117,6 +118,8 @@ def get_current_user(
             )
         db.add(candidate)
         try:
+            db.flush()
+            grant_role(db, candidate, UserRole.BUYER)
             db.commit()
         except IntegrityError as exc:
             db.rollback()
@@ -140,8 +143,7 @@ def get_current_user(
 
 def require_roles(*roles: UserRole) -> Callable[..., User]:
     def role_dependency(user: User = Depends(get_current_user)) -> User:
-        assigned = user.roles or [user.role.value]
-        if user.role.value not in assigned or user.role not in roles:
+        if user.role.value not in user.roles or user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user
 

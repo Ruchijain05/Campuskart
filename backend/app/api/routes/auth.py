@@ -1,19 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth_deps import get_current_user, require_roles
 from app.api.deps import get_db
 from app.models.auth import User, UserRole
+from app.models.role import Role
+from app.models.user_role_map import UserRoleMap
 from app.schemas.auth import (
     SellerApplicationCreate,
     SellerApplicationRead,
     SellerApplicationReview,
     ActiveRoleUpdate,
     PrivilegedRoleUpdate,
+    UserRoleMapRead,
     UserRead,
 )
 from app.services import auth as auth_service
+from app.services.role_assignments import get_role_id, grant_role
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -23,12 +28,44 @@ def get_me(user: User = Depends(get_current_user)) -> UserRead:
     return user
 
 
+@router.get(
+    "/users/roles",
+    response_model=list[UserRoleMapRead],
+)
+def list_user_role_map(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+) -> list[UserRoleMapRead]:
+    rows = db.execute(
+        select(
+            User.id,
+            User.full_name,
+            User.email,
+            Role.role_id,
+            Role.role_name,
+        )
+        .join(UserRoleMap, UserRoleMap.user_id == User.id)
+        .join(Role, Role.role_id == UserRoleMap.role_id)
+        .order_by(User.id, Role.role_id)
+    ).all()
+    return [
+        UserRoleMapRead(
+            user_id=row.id,
+            full_name=row.full_name,
+            email=row.email,
+            role_id=row.role_id,
+            role_name=row.role_name,
+        )
+        for row in rows
+    ]
+
+
 @router.put("/active-role", response_model=UserRead)
 def set_active_role(details: ActiveRoleUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> UserRead:
-    assigned = user.roles or [user.role.value]
+    assigned = user.roles
     if details.role.value not in assigned:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="That role is not assigned to your account.")
-    user.role = details.role
+    user.role_id = get_role_id(db, details.role)
     db.commit()
     db.refresh(user)
     return user
@@ -39,12 +76,12 @@ def assign_privileged_role(
     user_id: int,
     details: PrivilegedRoleUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN)),
+    admin: User = Depends(require_roles(UserRole.ADMIN)),
 ) -> UserRead:
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    target.roles = list(dict.fromkeys([*(target.roles or [target.role.value]), details.role.value]))
+    grant_role(db, target, details.role, actor_id=admin.id)
     db.commit()
     db.refresh(target)
     return target

@@ -11,6 +11,7 @@ from app.schemas.delivery import DeliveryPersonCreate
 from app.schemas.delivery import DeliveryJobRead, DeliveryPersonRead, DeliverySellerContact
 from app.services.email_notifications import send_email
 from app.services.notifications import create_notification
+from app.services.role_assignments import grant_role
 
 NEXT_STATUS = {
     "assigned": {"collected_from_seller"},
@@ -26,10 +27,9 @@ def create_delivery_person(db: Session, details: DeliveryPersonCreate) -> Delive
     user = db.scalar(select(User).where(User.email == email).with_for_update())
     if user is None:
         raise HTTPException(status_code=404, detail="No CampusKart account uses that email. The person must register as a buyer first.")
-    assigned = list(user.roles or [user.role.value])
-    if UserRole.DELIVERY_PERSON.value in assigned:
+    if UserRole.DELIVERY_PERSON.value in user.roles:
         raise HTTPException(status_code=409, detail="This account already has delivery person access.")
-    user.roles = [*assigned, UserRole.DELIVERY_PERSON.value]
+    grant_role(db, user, UserRole.DELIVERY_PERSON)
     db.commit()
     db.refresh(user)
     return DeliveryPersonRead.model_validate(user)

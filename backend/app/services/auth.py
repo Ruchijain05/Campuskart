@@ -13,6 +13,7 @@ from app.models.auth import (
 from app.schemas.auth import SellerApplicationCreate
 from app.services.email_notifications import send_email
 from app.services.notifications import create_notification
+from app.services.role_assignments import get_role_id, grant_role
 
 
 def create_seller_application(
@@ -85,7 +86,7 @@ def review_seller_application(
             status_code=status.HTTP_409_CONFLICT,
             detail="Applicant account no longer exists",
         )
-    if reviewed_status == SellerApplicationStatus.APPROVED and UserRole.SELLER.value in (applicant.roles or []):
+    if reviewed_status == SellerApplicationStatus.APPROVED and UserRole.SELLER.value in applicant.roles:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -112,8 +113,8 @@ def review_seller_application(
             detail="Application has already been reviewed",
         )
     if reviewed_status == SellerApplicationStatus.APPROVED:
-        applicant.roles = list(dict.fromkeys([*(applicant.roles or [UserRole.BUYER.value]), UserRole.SELLER.value]))
-        applicant.role = UserRole.SELLER
+        grant_role(db, applicant, UserRole.SELLER, actor_id=admin.id)
+        applicant.role_id = get_role_id(db, UserRole.SELLER)
 
     create_notification(
         db,

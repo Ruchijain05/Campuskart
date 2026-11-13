@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     supabase_secret_key: SecretStr | None = None
     supabase_service_role_key: SecretStr | None = None
     database_url: str
+    app_database_url: str
+    app_database_role: str
     frontend_origins: list[str] = ["http://localhost:5173"]
     frontend_base_url: str = "http://localhost:5173"
     smtp_host: str | None = None
@@ -44,6 +46,13 @@ class Settings(BaseSettings):
             raise ValueError("SMTP_TIMEOUT_SECONDS must be at least 1")
         if self.smtp_use_tls and self.smtp_use_ssl:
             raise ValueError("Set only one of SMTP_USE_TLS or SMTP_USE_SSL")
+        self.app_database_role = self.app_database_role.strip()
+        if not self.app_database_role:
+            raise ValueError("APP_DATABASE_ROLE must be configured")
+        if self.app_database_role.lower() in {"anon", "authenticated", "service_role"}:
+            raise ValueError("APP_DATABASE_ROLE must not be anon, authenticated, or service_role")
+        if self.app_database_role != "campuskart_app":
+            raise ValueError("APP_DATABASE_ROLE must be campuskart_app")
         if bool(self.razorpay_key_id) != bool(self.razorpay_key_secret):
             raise ValueError("Configure both RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET")
         if self.razorpay_key_id and not self.razorpay_key_id.startswith("rzp_test_"):

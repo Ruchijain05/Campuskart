@@ -10,7 +10,7 @@ class DeliveryAddress(Base):
     __tablename__ = "delivery_addresses"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(16), nullable=False)
     address_line: Mapped[str] = mapped_column(Text, nullable=False)

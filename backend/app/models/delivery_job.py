@@ -11,8 +11,8 @@ class DeliveryJob(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), unique=True, index=True)
-    delivery_person_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
-    assigned_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    delivery_person_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="RESTRICT"), index=True)
+    assigned_by_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="RESTRICT"))
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="assigned", server_default="assigned")
     pickup_location_name: Mapped[str] = mapped_column(String(120), nullable=False)
     failure_note: Mapped[str | None] = mapped_column(Text, nullable=True)

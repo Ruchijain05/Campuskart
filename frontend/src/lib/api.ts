@@ -19,6 +19,7 @@ import type {
   AdminDashboard,
   BuyAgainProduct,
   User,
+  UserRoleMapEntry,
   Notification,
   NotificationSummary,
   SellerOrder,
@@ -419,6 +420,8 @@ export const api = {
   deleteCategory: (id: number, token: string) =>
     request<void>(`/categories/${id}`, { method: "DELETE" }, token),
   me: (token: string) => request<User>("/auth/me", {}, token),
+  listUserRoleMap: (token: string) =>
+    request<UserRoleMapEntry[]>("/auth/users/roles", {}, token),
   setActiveRole: (role: User["role"], token: string) => request<User>("/auth/active-role", { method: "PUT", body: JSON.stringify({ role }) }, token),
   assignPrivilegedRole: (userId: number, role: "admin" | "delivery_person", token: string) =>
     request<User>(`/auth/users/${userId}/privileged-role`, { method: "PUT", body: JSON.stringify({ role }) }, token),

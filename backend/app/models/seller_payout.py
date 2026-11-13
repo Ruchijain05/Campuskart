@@ -11,7 +11,7 @@ class SellerPayout(Base):
     __tablename__ = "seller_payouts"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending", index=True)
     reference: Mapped[str | None] = mapped_column(String(120), nullable=True)

@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.auth import User, UserRole
 from app.schemas.auth import UserRegister
+from app.services.role_assignments import get_role_id, grant_role
 
 
 def _create_supabase_user(admin_input: UserRegister) -> UUID:
@@ -84,7 +85,7 @@ def main() -> None:
 
     with SessionLocal() as db:
         existing_admin = next((user.id for user in db.scalars(select(User)).all()
-                               if UserRole.ADMIN.value in (user.roles or [user.role.value])), None)
+                               if UserRole.ADMIN.value in user.roles), None)
         if existing_admin is not None:
             raise SystemExit("An admin already exists; bootstrap creation is disabled.")
         if db.scalar(select(User.id).where(User.email == str(admin_input.email))) is not None:
@@ -96,13 +97,15 @@ def main() -> None:
             full_name=admin_input.full_name,
             email=str(admin_input.email),
             phone_number=admin_input.phone_number,
-            role=UserRole.ADMIN,
-            roles=[UserRole.BUYER.value, UserRole.ADMIN.value],
+            role_id=get_role_id(db, UserRole.ADMIN),
             is_active=True,
             is_email_verified=True,
         )
         db.add(admin)
         try:
+            db.flush()
+            grant_role(db, admin, UserRole.BUYER)
+            grant_role(db, admin, UserRole.ADMIN)
             db.commit()
         except IntegrityError as exc:
             db.rollback()

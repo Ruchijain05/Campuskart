@@ -23,6 +23,14 @@ export interface User {
   created_at: string;
 }
 
+export interface UserRoleMapEntry {
+  user_id: number;
+  full_name: string;
+  email: string;
+  role_id: number;
+  role_name: UserRole;
+}
+
 export interface Product {
   id: number;
   name: string;

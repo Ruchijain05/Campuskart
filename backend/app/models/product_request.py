@@ -11,7 +11,7 @@ class ProductRequest(Base):
     __tablename__ = "product_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
     product_name: Mapped[str] = mapped_column(String(160), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     photo_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

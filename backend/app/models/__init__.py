@@ -3,6 +3,8 @@ from app.models.category import Category
 from app.models.auth import SellerApplication, SellerApplicationStatus, User, UserRole
 from app.models.delivery_job import DeliveryJob
 from app.models.product import Product
+from app.models.role import Role
+from app.models.user_role_map import UserRoleMap
 from app.models.order import Order, OrderItem
 from app.models.wishlist import WishlistItem
 from app.models.review import Review
@@ -26,6 +28,8 @@ __all__ = [
     "CartItem",
     "Category",
     "Product",
+    "Role",
+    "UserRoleMap",
     "Order",
     "OrderItem",
     "WishlistItem",

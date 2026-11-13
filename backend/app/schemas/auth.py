@@ -58,6 +58,14 @@ class UserRead(BaseModel):
     created_at: datetime
 
 
+class UserRoleMapRead(BaseModel):
+    user_id: int
+    full_name: str
+    email: EmailStr
+    role_id: int
+    role_name: str
+
+
 class ActiveRoleUpdate(BaseModel):
     role: UserRole
 
